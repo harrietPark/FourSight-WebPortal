@@ -31,10 +31,12 @@ export async function loadGeneratedContent(
     body: {
       object_id: object.object_id,
       display_name: object.display_name,
+      description: object.description ?? null,
       material_id: detail.material.material_id,
       material_display_name: detail.material.display_name,
       detected_materials: object.detected_materials,
       myths: detail.material.myths,
+      quiz_prompt: `Write a true/false quiz about ${object.display_name} that tests a common myth about its ${detail.material.display_name} material.`,
     },
   });
 

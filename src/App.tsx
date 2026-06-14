@@ -23,6 +23,7 @@ import {
   findMaterialDetail,
   getFallbackData,
   loadAppData,
+  DEMO_USER_ID,
 } from './data';
 import { type GeneratedContent, loadGeneratedContent, prefetchObjectImages } from './generatedContent';
 
@@ -306,6 +307,13 @@ function LogScreen({
         </p>
       )}
 
+      {!data.isFallback && entries.length === 0 && (
+        <p className="data-note">
+          Connected to Supabase, but no scans found for this user yet. Scan with Spectacles to
+          populate your log.
+        </p>
+      )}
+
       <section className="log-list" aria-busy={isLoading}>
         {entries.length === 0 ? (
           <div className="empty-card log-empty">No Items Scanned :(</div>
@@ -353,6 +361,13 @@ function QuestsScreen({ data }: { data: AppData }) {
       {data.isFallback && (
         <p className="data-note">
           Demo mode: quest progress uses local scan data until Supabase is connected.
+        </p>
+      )}
+
+      {!data.isFallback && data.objects.length === 0 && (
+        <p className="data-note">
+          Connected to Supabase, but no scans found yet. Complete your first scan to start
+          unlocking quests.
         </p>
       )}
 
@@ -448,7 +463,7 @@ function ProfileScreen({ data }: { data: AppData }) {
           </div>
           <div>
             <dt>User ID</dt>
-            <dd>{formatUserId(user.user_id)}</dd>
+            <dd>{DEMO_USER_ID}</dd>
           </div>
           <div>
             <dt>Joined</dt>
@@ -493,13 +508,18 @@ function DetailScreen({
   const activeGenerated =
     generated?.cacheKey === generatedCacheKey ? generated.content : null;
   const imageUrl = activeGenerated?.image_url ?? initialImageUrl;
+  const materialName = activeDetail?.material.display_name ?? activeMaterialName;
   const quiz = activeGenerated
-    ? {
-        question: activeGenerated.quiz_question,
-        answer: activeGenerated.quiz_answer,
-        explanation: activeGenerated.quiz_explanation,
-      }
-    : makeQuiz(activeDetail?.material.myths ?? [], activeDetail?.material.display_name ?? activeMaterialName);
+    ? withObjectQuizContext(
+        {
+          question: activeGenerated.quiz_question,
+          answer: activeGenerated.quiz_answer,
+          explanation: activeGenerated.quiz_explanation,
+        },
+        object.display_name,
+        materialName,
+      )
+    : makeQuiz(activeDetail?.material.myths ?? [], object.display_name, materialName);
   const action =
     activeGenerated?.action_item ??
     makeActionItem(object.display_name, activeDetail?.material.display_name ?? activeMaterialName);
@@ -962,14 +982,6 @@ function ordinal(day: number) {
   return `${day}${suffix}`;
 }
 
-function formatUserId(userId: string) {
-  if (userId.length <= 12) {
-    return userId;
-  }
-
-  return `${userId.slice(0, 8)}...${userId.slice(-4)}`;
-}
-
 function formatImpactValue(value?: number | null, unit?: string) {
   if (value === null || value === undefined) {
     return 'Data pending';
@@ -979,11 +991,48 @@ function formatImpactValue(value?: number | null, unit?: string) {
   return unit ? `${formatted}${unit}` : formatted;
 }
 
-function makeQuiz(myths: string[], materialName: string) {
-  const myth = myths[0] ?? `${materialName} is always accepted in every recycling bin.`;
+function makeQuiz(myths: string[], objectName: string, materialName: string) {
+  const myth = myths[0];
+
+  if (myth) {
+    const statement = myth.replace(/\.$/, '').trim();
+    return {
+      question: `True or false: For this ${objectName}, ${statement.charAt(0).toLowerCase()}${statement.slice(1)}?`,
+      answer: false,
+      explanation: `This ${objectName} contains ${materialName}. ${myth}`,
+    };
+  }
+
   return {
-    question: myth.replace(/\.$/, '?'),
+    question: `True or false: The ${materialName} in this ${objectName} can always go in your usual recycling bin?`,
     answer: false,
+    explanation: `${objectName} often combines ${materialName} with other parts, which changes how it should be sorted.`,
+  };
+}
+
+function withObjectQuizContext(
+  quiz: { question: string; answer: boolean; explanation?: string | null },
+  objectName: string,
+  materialName: string,
+) {
+  const mentionsObject = new RegExp(objectName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(
+    quiz.question,
+  );
+  const mentionsMaterial = new RegExp(materialName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(
+    quiz.question,
+  );
+
+  if (mentionsObject && mentionsMaterial) {
+    return quiz;
+  }
+
+  const normalizedQuestion = quiz.question.trim().replace(/\?*$/, '');
+  return {
+    ...quiz,
+    question: `For this ${objectName} (${materialName}), ${normalizedQuestion.charAt(0).toLowerCase()}${normalizedQuestion.slice(1)}?`,
+    explanation:
+      quiz.explanation ??
+      `Think about how ${materialName} shows up in a ${objectName}, not just on its own.`,
   };
 }
 

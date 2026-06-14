@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
+export const DEMO_USER_ID = 'demoUser0614';
+
 export type UserData = {
   user_id: string;
   created_at: string;
@@ -61,7 +63,7 @@ export type AppData = {
 };
 
 const fallbackUser: UserData = {
-  user_id: 'demo-user',
+  user_id: DEMO_USER_ID,
   display_name: 'SJ',
   created_at: '2026-06-13T10:00:00Z',
 };
@@ -360,7 +362,8 @@ const fallbackMaterials: Record<string, MaterialDetail> = {
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-const currentUserId = import.meta.env.VITE_CURRENT_USER_ID as string | undefined;
+const currentUserId =
+  (import.meta.env.VITE_CURRENT_USER_ID as string | undefined) ?? DEMO_USER_ID;
 
 const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
@@ -385,7 +388,7 @@ export const getFallbackData = (): AppData => ({
 });
 
 export async function loadAppData(): Promise<AppData> {
-  if (!supabase || !currentUserId) {
+  if (!supabase) {
     return getFallbackData();
   }
 
@@ -441,7 +444,10 @@ export async function loadAppData(): Promise<AppData> {
     );
 
     return {
-      user: user as UserData,
+      user: {
+        ...(user as UserData),
+        user_id: DEMO_USER_ID,
+      },
       objects: objectRows,
       materialDetails: { ...fallbackMaterials, ...materialDetails },
       isFallback: false,

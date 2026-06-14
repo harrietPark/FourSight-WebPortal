@@ -17,6 +17,7 @@ import {
   getFallbackData,
   loadAppData,
 } from './data';
+import { type GeneratedContent, loadGeneratedContent } from './generatedContent';
 
 type Screen = 'splash' | 'learn' | 'detail';
 
@@ -167,13 +168,48 @@ function DetailScreen({
   onBack: () => void;
 }) {
   const [activeMaterialName, setActiveMaterialName] = useState(object.detected_materials[0] ?? 'Plastic');
+  const [generated, setGenerated] = useState<{
+    cacheKey: string;
+    content: GeneratedContent | null;
+  } | null>(null);
 
   const activeDetail =
     findMaterialDetail(activeMaterialName, materialDetails) ??
     Object.values(materialDetails)[0];
 
-  const quiz = makeQuiz(activeDetail?.material.myths ?? [], activeDetail?.material.display_name ?? activeMaterialName);
-  const action = makeActionItem(object.display_name, activeDetail?.material.display_name ?? activeMaterialName);
+  const generatedCacheKey = activeDetail
+    ? `${object.object_id}:${activeDetail.material.material_id}`
+    : object.object_id;
+  const activeGenerated =
+    generated?.cacheKey === generatedCacheKey ? generated.content : null;
+  const quiz = activeGenerated
+    ? {
+        question: activeGenerated.quiz_question,
+        answer: activeGenerated.quiz_answer,
+        explanation: activeGenerated.quiz_explanation,
+      }
+    : makeQuiz(activeDetail?.material.myths ?? [], activeDetail?.material.display_name ?? activeMaterialName);
+  const action =
+    activeGenerated?.action_item ??
+    makeActionItem(object.display_name, activeDetail?.material.display_name ?? activeMaterialName);
+
+  useEffect(() => {
+    if (!activeDetail) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    loadGeneratedContent(object, activeDetail).then((content) => {
+      if (!isCancelled) {
+        setGenerated({ cacheKey: generatedCacheKey, content });
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeDetail, generatedCacheKey, object]);
 
   return (
     <main className="phone-frame detail-screen">
@@ -184,7 +220,11 @@ function DetailScreen({
       </header>
 
       <section className="detail-hero">
-        <GeneratedObjectIcon name={object.display_name} size="large" />
+        <ObjectVisual
+          imageUrl={activeGenerated?.image_url}
+          name={object.display_name}
+          size="large"
+        />
         <h1>{object.display_name}</h1>
         <div className="material-tabs">
           {object.detected_materials.map((material) => (
@@ -298,7 +338,11 @@ function Lifecycle({ detail }: { detail: MaterialDetail }) {
   );
 }
 
-function QuizCard({ quiz }: { quiz: { question: string; answer: boolean } }) {
+function QuizCard({
+  quiz,
+}: {
+  quiz: { question: string; answer: boolean; explanation?: string | null };
+}) {
   const [answer, setAnswer] = useState<boolean | null>(null);
 
   return (
@@ -316,7 +360,11 @@ function QuizCard({ quiz }: { quiz: { question: string; answer: boolean } }) {
         </button>
       </div>
       {answer !== null && (
-        <p>{answer === quiz.answer ? 'Nice! That matches the material data.' : 'Not quite. Check the myth behind this material.'}</p>
+        <p>
+          {answer === quiz.answer
+            ? quiz.explanation ?? 'Nice! That matches the material data.'
+            : quiz.explanation ?? 'Not quite. Check the myth behind this material.'}
+        </p>
       )}
     </section>
   );
@@ -384,6 +432,28 @@ function GeneratedObjectIcon({
       )}
     </span>
   );
+}
+
+function ObjectVisual({
+  imageUrl,
+  name,
+  size = 'default',
+}: {
+  imageUrl?: string | null;
+  name: string;
+  size?: 'small' | 'default' | 'large';
+}) {
+  if (imageUrl) {
+    return (
+      <img
+        className={`generated-object-image ${size}`}
+        src={imageUrl}
+        alt={`${name} AI generated icon`}
+      />
+    );
+  }
+
+  return <GeneratedObjectIcon name={name} size={size} />;
 }
 
 function buildDayGroups(objects: ObjectCard[]) {

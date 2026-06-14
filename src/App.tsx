@@ -21,6 +21,13 @@ import { type GeneratedContent, loadGeneratedContent, prefetchObjectImages } fro
 
 type Screen = 'splash' | 'main' | 'detail';
 type MainTab = 'learn' | 'profile';
+type SortMode = 'date' | 'type';
+
+type ScanGroup = {
+  key: string;
+  label: string;
+  objects: ObjectCard[];
+};
 
 const dateFormatter = new Intl.DateTimeFormat('en-US', {
   weekday: 'long',
@@ -37,6 +44,11 @@ const joinedDateFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'long',
   day: 'numeric',
   year: 'numeric',
+});
+
+const shortDateFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
 });
 
 function App() {
@@ -142,7 +154,11 @@ function LearnScreen({
   objectImages: Record<string, string | null>;
   onOpenDetail: (object: ObjectCard) => void;
 }) {
-  const dayGroups = useMemo(() => buildDayGroups(data.objects), [data.objects]);
+  const [sortMode, setSortMode] = useState<SortMode>('date');
+  const scanGroups = useMemo(
+    () => (sortMode === 'date' ? buildDayGroups(data.objects) : buildTypeGroups(data.objects)),
+    [data.objects, sortMode],
+  );
 
   return (
     <section className="learn-page">
@@ -151,10 +167,18 @@ function LearnScreen({
 
       <div className="sort-row" aria-label="Sort scans">
         <span>SORT BY</span>
-        <button className="pill muted" type="button" disabled>
+        <button
+          className={`pill${sortMode === 'type' ? ' active' : ' muted'}`}
+          type="button"
+          onClick={() => setSortMode('type')}
+        >
           By Type
         </button>
-        <button className="pill active" type="button">
+        <button
+          className={`pill${sortMode === 'date' ? ' active' : ' muted'}`}
+          type="button"
+          onClick={() => setSortMode('date')}
+        >
           By Date
         </button>
       </div>
@@ -166,11 +190,11 @@ function LearnScreen({
       )}
 
       <section
-        className={`timeline${dayGroups.length === 1 ? ' timeline--single' : ''}`}
+        className={`timeline${scanGroups.length === 1 ? ' timeline--single' : ''}`}
         aria-busy={isLoading}
       >
-        {dayGroups.map((group) => (
-          <article className="day-group" key={group.isoDate}>
+        {scanGroups.map((group) => (
+          <article className="day-group" key={group.key}>
             <div className="timeline-dot" />
             <h2>{group.label}</h2>
             <div className="day-cards">
@@ -191,7 +215,11 @@ function LearnScreen({
                       />
                     </div>
                     <span className="scan-card-copy">
-                      <small>{object.display_name}</small>
+                      <small>
+                        {sortMode === 'type'
+                          ? shortDateFormatter.format(new Date(object.created_at))
+                          : object.display_name}
+                      </small>
                       <strong>{object.detected_materials.join(', ')}</strong>
                     </span>
                   </button>
@@ -589,7 +617,7 @@ function ObjectVisual({
   return <GeneratedObjectIcon name={name} size={size} />;
 }
 
-function buildDayGroups(objects: ObjectCard[]) {
+function buildDayGroups(objects: ObjectCard[]): ScanGroup[] {
   if (objects.length === 0) {
     return [];
   }
@@ -599,12 +627,12 @@ function buildDayGroups(objects: ObjectCard[]) {
   );
   const newest = startOfDay(new Date(sortedObjects[0].created_at));
   const oldest = startOfDay(new Date(sortedObjects[sortedObjects.length - 1].created_at));
-  const groups = [];
+  const groups: ScanGroup[] = [];
 
   for (let date = newest; date >= oldest; date = addDays(date, -1)) {
     const isoDate = localDateKey(date);
     groups.push({
-      isoDate,
+      key: isoDate,
       label: dateFormatter.format(date).replace(/(\d+)$/, (_, day) => ordinal(Number(day))),
       objects: sortedObjects
         .filter((object) => localDateKey(new Date(object.created_at)) === isoDate)
@@ -613,6 +641,35 @@ function buildDayGroups(objects: ObjectCard[]) {
   }
 
   return groups;
+}
+
+function buildTypeGroups(objects: ObjectCard[]): ScanGroup[] {
+  if (objects.length === 0) {
+    return [];
+  }
+
+  const byType = new Map<string, ObjectCard[]>();
+
+  for (const object of objects) {
+    const label = object.display_name.trim() || 'Unknown';
+    byType.set(label, [...(byType.get(label) ?? []), object]);
+  }
+
+  return Array.from(byType.entries())
+    .map(([label, groupObjects]) => {
+      const sortedObjects = [...groupObjects].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+
+      return {
+        key: label,
+        label,
+        objects: sortedObjects,
+        latestAt: new Date(sortedObjects[0].created_at).getTime(),
+      };
+    })
+    .sort((a, b) => b.latestAt - a.latestAt)
+    .map(({ key, label, objects }) => ({ key, label, objects }));
 }
 
 function startOfDay(date: Date) {

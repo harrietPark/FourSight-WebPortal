@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Award,
-  BookOpen,
   Check,
+  GraduationCap,
+  List,
   User,
   X,
 } from 'lucide-react';
@@ -160,11 +161,13 @@ function LearnScreen({
                       type="button"
                       onClick={() => onOpenDetail(object)}
                     >
-                      <ObjectVisual
-                        imageUrl={objectImages[object.object_id]}
-                        name={object.display_name}
-                      />
-                      <span>
+                      <div className="scan-card-thumb">
+                        <ObjectVisual
+                          imageUrl={objectImages[object.object_id]}
+                          name={object.display_name}
+                        />
+                      </div>
+                      <span className="scan-card-copy">
                         <small>{object.display_name}</small>
                         <strong>{object.detected_materials.join(', ')}</strong>
                       </span>
@@ -413,8 +416,8 @@ function ActionCard({ action }: { action: string }) {
 
 function BottomTabs() {
   const tabs = [
-    ['Learn', BookOpen, true],
-    ['Log', BookOpen, false],
+    ['Learn', GraduationCap, true],
+    ['Log', List, false],
     ['Quests', Award, false],
     ['Profile', User, false],
   ] as const;

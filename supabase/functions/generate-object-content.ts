@@ -56,11 +56,14 @@ Deno.serve(async (req) => {
     }
 
     const supabase = getSupabaseClient();
+    const materialId = await resolveMaterialIdFromDb(supabase, body.material_id);
+    const request = { ...body, material_id: materialId };
+
     const { data: cached } = await supabase
       .from('generated_object_content')
       .select('*')
-      .eq('object_id', body.object_id)
-      .eq('material_id', body.material_id)
+      .eq('object_id', request.object_id)
+      .eq('material_id', request.material_id)
       .maybeSingle();
 
     const cachedRow = cached as CachedContent | null;
@@ -72,8 +75,8 @@ Deno.serve(async (req) => {
     }
 
     const [textResult, imageResult] = await Promise.allSettled([
-      needsText ? generateTextContent(body) : Promise.resolve(textFromCache(cachedRow!)),
-      needsImage ? generateImage(body, supabase) : Promise.resolve(imageFromCache(cachedRow!)),
+      needsText ? generateTextContent(request) : Promise.resolve(textFromCache(cachedRow!)),
+      needsImage ? generateImage(request, supabase) : Promise.resolve(imageFromCache(cachedRow!)),
     ]);
 
     if (textResult.status === 'rejected') {
@@ -93,8 +96,8 @@ Deno.serve(async (req) => {
     const { data, error } = await supabase
       .from('generated_object_content')
       .upsert({
-        object_id: body.object_id,
-        material_id: body.material_id,
+        object_id: request.object_id,
+        material_id: request.material_id,
         image_url: image.image_url,
         image_prompt: image.image_prompt,
         quiz_question: aiText.quiz_question,
@@ -146,6 +149,58 @@ function imageFromCache(cached: CachedContent): GeneratedImage {
 
 function sanitizeFilePart(value: string) {
   return value.replace(/[^a-zA-Z0-9-_]/g, '-');
+}
+
+function normalizeMaterialKey(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+const MATERIAL_ALIAS: Record<string, string> = {
+  'abs-plastic': 'plastic',
+  abs: 'plastic',
+  polypropylene: 'plastic',
+  silicone: 'plastic',
+  polyethylene: 'polyethylene',
+  paperboard: 'paperboard',
+  cardboard: 'cardboard',
+  aluminum: 'plastic',
+  aluminium: 'plastic',
+  'lcd-glass': 'plastic',
+  'tempered-glass': 'plastic',
+  'soda-lime-glass': 'plastic',
+  glass: 'plastic',
+};
+
+function resolveMaterialId(materialId: string) {
+  const key = normalizeMaterialKey(materialId);
+  return MATERIAL_ALIAS[key] ?? key;
+}
+
+async function resolveMaterialIdFromDb(
+  supabase: ReturnType<typeof createClient>,
+  materialId: string,
+): Promise<string> {
+  const resolved = resolveMaterialId(materialId);
+  const { data } = await supabase
+    .from('materials')
+    .select('material_id')
+    .eq('material_id', resolved)
+    .maybeSingle();
+
+  if (data?.material_id) {
+    return data.material_id;
+  }
+
+  const { data: fallback } = await supabase
+    .from('materials')
+    .select('material_id')
+    .eq('material_id', 'plastic')
+    .maybeSingle();
+
+  return fallback?.material_id ?? resolved;
 }
 
 async function generateTextContent(body: GenerateRequest): Promise<GeneratedText> {
@@ -237,7 +292,6 @@ async function generateImage(body: GenerateRequest, supabase: ReturnType<typeof 
       prompt: image_prompt,
       size: '1024x1024',
       quality: 'standard',
-      style: 'vivid',
       n: 1,
     }),
   });

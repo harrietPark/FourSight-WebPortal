@@ -24,6 +24,12 @@ const MATERIAL_ALIAS: Record<string, string> = {
   'glass': 'plastic',
 };
 
+/** Maps scanned material names to a material_id that exists in the materials table. */
+export function resolveMaterialId(materialNameOrKey: string) {
+  const key = normalizeMaterialKey(materialNameOrKey);
+  return MATERIAL_ALIAS[key] ?? key;
+}
+
 export type UserData = {
   user_id: string;
   created_at: string;
@@ -390,38 +396,23 @@ const currentUserId =
 export const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
-const normalizeMaterialKeyLocal = normalizeMaterialKey;
 
 const uniqueMaterialKeys = (objects: ObjectCard[]) =>
-  Array.from(new Set(objects.flatMap((object) => object.detected_materials.map(normalizeMaterialKeyLocal))));
+  Array.from(new Set(objects.flatMap((object) => object.detected_materials.map(resolveMaterialId))));
 
 export const findMaterialDetail = (materialName: string, details: Record<string, MaterialDetail>) => {
-  const key = normalizeMaterialKey(materialName);
-  const direct = details[key] ?? details[materialName.toLowerCase()];
+  const storageId = resolveMaterialId(materialName);
+  const detail = details[storageId];
 
-  if (direct) {
-    return {
-      ...direct,
-      material: {
-        ...direct.material,
-        material_id: key,
-        display_name: materialName,
-      },
-    };
-  }
-
-  const aliasKey = MATERIAL_ALIAS[key];
-  const aliased = aliasKey ? details[aliasKey] : undefined;
-
-  if (!aliased) {
+  if (!detail) {
     return undefined;
   }
 
   return {
-    ...aliased,
+    ...detail,
     material: {
-      ...aliased.material,
-      material_id: key,
+      ...detail.material,
+      material_id: storageId,
       display_name: materialName,
     },
   };

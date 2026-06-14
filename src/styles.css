@@ -156,7 +156,7 @@ button {
 }
 
 .timeline {
-  border-left: 2px solid #e4e8e7;
+  border-left: 0;
   margin-left: 14px;
   padding: 0 0 8px 34px;
 }
@@ -164,17 +164,44 @@ button {
 .timeline--single {
   border-left: 0;
   margin-left: 0;
-  padding-left: 42px;
+  padding-left: 0;
 }
 
 .timeline--single .timeline-dot {
   left: 0;
+  top: 2px;
+}
+
+.timeline--single .day-group h2 {
+  margin-left: 44px;
+}
+
+.timeline--single .day-cards {
+  margin-left: 44px;
 }
 
 .day-group {
-  min-height: 120px;
   padding-bottom: 28px;
   position: relative;
+}
+
+.day-group::after {
+  background: #e4e8e7;
+  bottom: 0;
+  content: "";
+  left: -34px;
+  position: absolute;
+  top: 16px;
+  width: 2px;
+  z-index: 0;
+}
+
+.day-group:last-child::after {
+  bottom: 28px;
+}
+
+.timeline--single .day-group::after {
+  display: none;
 }
 
 .timeline-dot {
@@ -187,6 +214,7 @@ button {
   position: absolute;
   top: 0;
   width: 32px;
+  z-index: 1;
 }
 
 .timeline-dot::after {
@@ -424,7 +452,7 @@ button {
 .detail-content {
   display: grid;
   gap: 22px;
-  padding: 0 16px 32px;
+  padding: 32px 16px 32px;
 }
 
 .detail-section > h2 {
@@ -456,27 +484,21 @@ button {
   padding: 14px 14px 14px 12px;
 }
 
-.info-card-icon {
-  border-radius: 8px;
+.info-card-icon-wrap {
+  align-items: center;
+  display: flex;
+  flex: 0 0 40px;
+  height: 40px;
+  justify-content: center;
+  overflow: hidden;
+  width: 40px;
+}
+
+.info-card-icon-wrap img {
   display: block;
-  flex: 0 0 42px;
-  height: 42px;
-  mix-blend-mode: screen;
+  height: 36px;
   object-fit: contain;
-  padding: 8px;
-  width: 42px;
-}
-
-.info-card-icon.green {
-  background: #e8f6ec;
-}
-
-.info-card-icon.teal {
-  background: #e3f7f3;
-}
-
-.info-card-icon.red {
-  background: #fdebee;
+  width: 36px;
 }
 
 .info-card h3 {

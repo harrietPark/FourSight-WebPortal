@@ -316,7 +316,9 @@ function InfoStack({ detail }: { detail: MaterialDetail }) {
       <div className="info-stack">
         {items.map((item) => (
           <article className={`info-card ${item.tone}`} key={item.label}>
-            <img className={`info-card-icon ${item.tone}`} src={item.iconSrc} alt="" />
+            <span className={`info-card-icon-wrap ${item.tone}`}>
+              <img src={item.iconSrc} alt="" />
+            </span>
             <div>
               <h3>{item.label}</h3>
               <p>{item.text}</p>

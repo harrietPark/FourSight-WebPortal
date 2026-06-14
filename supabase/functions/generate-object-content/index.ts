@@ -280,6 +280,7 @@ async function generateImage(
   const image_prompt =
     `Single ${body.display_name}, cute 3D product icon, isometric view, glossy toy render, ` +
     `${material} material accents, centered on pure white background, soft shadow, vibrant colors, no text, no people, no watermark.`;
+  const imageModel = Deno.env.get('OPENAI_IMAGE_MODEL') ?? 'gpt-image-1';
 
   const res = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
@@ -288,10 +289,10 @@ async function generateImage(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'dall-e-3',
+      model: imageModel,
       prompt: image_prompt,
       size: '1024x1024',
-      quality: 'standard',
+      quality: 'low',
       n: 1,
     }),
   });
@@ -301,19 +302,26 @@ async function generateImage(
   }
 
   const data = await res.json();
+  const imageBase64 = data.data?.[0]?.b64_json as string | undefined;
   const remoteUrl = data.data?.[0]?.url as string | undefined;
 
-  if (!remoteUrl) {
+  let bytes: Uint8Array | null = null;
+
+  if (imageBase64) {
+    bytes = decodeBase64Image(imageBase64);
+  } else if (remoteUrl) {
+    const imgRes = await fetch(remoteUrl);
+    if (!imgRes.ok) {
+      console.warn(`Image download failed (${imgRes.status})`);
+      return { image_url: remoteUrl, image_prompt };
+    }
+    bytes = new Uint8Array(await imgRes.arrayBuffer());
+  }
+
+  if (!bytes) {
     return { image_url: null, image_prompt };
   }
 
-  const imgRes = await fetch(remoteUrl);
-  if (!imgRes.ok) {
-    console.warn(`Storage fetch failed (${imgRes.status}), using temporary OpenAI URL`);
-    return { image_url: remoteUrl, image_prompt };
-  }
-
-  const bytes = new Uint8Array(await imgRes.arrayBuffer());
   const fileName = `objects/${sanitizeFilePart(body.object_id)}-${sanitizeFilePart(body.material_id)}.png`;
 
   const { error } = await supabase.storage.from('generated-assets').upload(fileName, bytes, {
@@ -322,8 +330,8 @@ async function generateImage(
   });
 
   if (error) {
-    console.warn('Storage upload failed, using temporary OpenAI URL:', error.message);
-    return { image_url: remoteUrl, image_prompt };
+    console.warn('Storage upload failed:', error.message);
+    return { image_url: null, image_prompt };
   }
 
   const { data: publicUrl } = supabase.storage.from('generated-assets').getPublicUrl(fileName);
@@ -332,6 +340,15 @@ async function generateImage(
     image_url: publicUrl.publicUrl,
     image_prompt,
   };
+}
+
+function decodeBase64Image(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function json(data: unknown, status = 200) {

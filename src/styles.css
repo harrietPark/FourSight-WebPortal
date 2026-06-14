@@ -1096,8 +1096,8 @@ button {
   transition: opacity 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-.quiz-actions button:disabled {
-  cursor: default;
+.quiz-actions button:active {
+  transform: scale(0.98);
 }
 
 .quiz-btn-yes {
@@ -1117,38 +1117,54 @@ button {
 }
 
 .quiz-btn-wrong {
-  opacity: 0.72;
+  box-shadow: 0 0 0 3px #c94f53;
 }
 
-.quiz-actions button:not(.quiz-btn-correct):disabled {
-  opacity: 0.55;
+.quiz-btn-unselected {
+  opacity: 0.62;
 }
 
-.quiz-actions button.quiz-btn-correct:disabled,
-.quiz-actions button.quiz-btn-wrong:disabled {
-  opacity: 1;
+.quiz-btn-unselected:hover {
+  opacity: 0.82;
 }
 
 .quiz-feedback {
+  animation: quiz-feedback-in 0.22s ease;
   border-radius: 12px;
   margin-top: 14px;
-  padding: 12px 14px;
+  padding: 14px 14px 12px;
+}
+
+@keyframes quiz-feedback-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .quiz-feedback-correct {
-  background: rgba(47, 143, 91, 0.14);
-  border: 1px solid rgba(47, 143, 91, 0.35);
+  background: rgba(47, 143, 91, 0.18);
+  border: 1px solid rgba(47, 143, 91, 0.42);
 }
 
 .quiz-feedback-wrong {
-  background: rgba(241, 113, 117, 0.16);
-  border: 1px solid rgba(241, 113, 117, 0.4);
+  background: rgba(241, 113, 117, 0.2);
+  border: 1px solid rgba(241, 113, 117, 0.48);
 }
 
 .quiz-feedback-header {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
-  gap: 8px;
+  gap: 10px;
+}
+
+.quiz-feedback-copy {
+  flex: 1;
 }
 
 .quiz-feedback-correct .quiz-feedback-header {
@@ -1160,23 +1176,26 @@ button {
 }
 
 .quiz-feedback-label {
-  font-size: 0.82rem;
+  font-size: 0.92rem;
   font-weight: 800;
+  letter-spacing: 0.01em;
   margin: 0;
 }
 
-.quiz-feedback-answer {
-  color: #5c5a30;
-  font-size: 0.74rem;
+.quiz-feedback-subtitle {
+  font-size: 0.76rem;
   font-weight: 700;
-  margin: 8px 0 0;
+  line-height: 1.35;
+  margin: 4px 0 0;
 }
 
 .quiz-feedback-explanation {
+  border-top: 1px solid rgba(92, 90, 48, 0.14);
   color: #5c5a30;
   font-size: 0.76rem;
   line-height: 1.45;
-  margin: 8px 0 0;
+  margin: 10px 0 0;
+  padding-top: 10px;
 }
 
 .quiz-card p {

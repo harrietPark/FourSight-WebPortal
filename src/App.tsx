@@ -742,6 +742,7 @@ function QuizCard({
   const [answer, setAnswer] = useState<boolean | null>(null);
   const hasAnswered = answer !== null;
   const isCorrect = hasAnswered && answer === quiz.answer;
+  const choiceLabel = (value: boolean) => (value ? 'Yes' : 'No');
 
   function buttonClass(choice: boolean) {
     const classes = ['quiz-btn', choice ? 'quiz-btn-yes' : 'quiz-btn-no'];
@@ -762,6 +763,10 @@ function QuizCard({
       classes.push('quiz-btn-selected');
     }
 
+    if (choice !== answer) {
+      classes.push('quiz-btn-unselected');
+    }
+
     return classes.join(' ');
   }
 
@@ -770,34 +775,37 @@ function QuizCard({
       <span className="quiz-badge">POP QUIZ!</span>
       <h2>{quiz.question}</h2>
       <div className="quiz-actions">
-        <button
-          type="button"
-          className={buttonClass(true)}
-          disabled={hasAnswered}
-          onClick={() => setAnswer(true)}
-        >
+        <button type="button" className={buttonClass(true)} onClick={() => setAnswer(true)}>
           <Check size={18} />
           YES
         </button>
-        <button
-          type="button"
-          className={buttonClass(false)}
-          disabled={hasAnswered}
-          onClick={() => setAnswer(false)}
-        >
+        <button type="button" className={buttonClass(false)} onClick={() => setAnswer(false)}>
           <X size={18} />
           NO
         </button>
       </div>
       {hasAnswered && (
-        <div className={`quiz-feedback ${isCorrect ? 'quiz-feedback-correct' : 'quiz-feedback-wrong'}`}>
+        <div
+          key={String(answer)}
+          className={`quiz-feedback ${isCorrect ? 'quiz-feedback-correct' : 'quiz-feedback-wrong'}`}
+          role="status"
+          aria-live="polite"
+        >
           <div className="quiz-feedback-header">
-            {isCorrect ? <CircleCheck size={22} strokeWidth={2.2} /> : <CircleX size={22} strokeWidth={2.2} />}
-            <p className="quiz-feedback-label">{isCorrect ? 'Correct!' : 'Not quite!'}</p>
+            {isCorrect ? (
+              <CircleCheck size={26} strokeWidth={2.2} />
+            ) : (
+              <CircleX size={26} strokeWidth={2.2} />
+            )}
+            <div className="quiz-feedback-copy">
+              <p className="quiz-feedback-label">{isCorrect ? 'Correct!' : 'Not quite!'}</p>
+              <p className="quiz-feedback-subtitle">
+                {isCorrect
+                  ? `Nice — ${choiceLabel(answer)} is the right answer.`
+                  : `You picked ${choiceLabel(answer)}, but the answer is ${choiceLabel(quiz.answer)}.`}
+              </p>
+            </div>
           </div>
-          {!isCorrect && (
-            <p className="quiz-feedback-answer">The answer is {quiz.answer ? 'Yes' : 'No'}.</p>
-          )}
           {quiz.explanation && <p className="quiz-feedback-explanation">{quiz.explanation}</p>}
         </div>
       )}

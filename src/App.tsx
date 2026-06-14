@@ -19,7 +19,8 @@ import {
 } from './data';
 import { type GeneratedContent, loadGeneratedContent, prefetchObjectImages } from './generatedContent';
 
-type Screen = 'splash' | 'learn' | 'detail';
+type Screen = 'splash' | 'main' | 'detail';
+type MainTab = 'learn' | 'profile';
 
 const dateFormatter = new Intl.DateTimeFormat('en-US', {
   weekday: 'long',
@@ -27,8 +28,20 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', {
   day: 'numeric',
 });
 
+const memberSinceFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'long',
+  year: 'numeric',
+});
+
+const joinedDateFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'long',
+  day: 'numeric',
+  year: 'numeric',
+});
+
 function App() {
   const [screen, setScreen] = useState<Screen>('splash');
+  const [mainTab, setMainTab] = useState<MainTab>('learn');
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [appData, setAppData] = useState<AppData>(getFallbackData());
   const [isLoading, setIsLoading] = useState(true);
@@ -70,7 +83,7 @@ function App() {
   };
 
   if (screen === 'splash') {
-    return <SplashScreen onEnter={() => setScreen('learn')} />;
+    return <SplashScreen onEnter={() => setScreen('main')} />;
   }
 
   if (screen === 'detail' && selectedObject) {
@@ -80,18 +93,25 @@ function App() {
         object={selectedObject}
         materialDetails={appData.materialDetails}
         initialImageUrl={objectImages[selectedObject.object_id]}
-        onBack={() => setScreen('learn')}
+        onBack={() => setScreen('main')}
       />
     );
   }
 
   return (
-    <LearnScreen
-      data={appData}
-      isLoading={isLoading}
-      objectImages={objectImages}
-      onOpenDetail={openDetail}
-    />
+    <main className="phone-frame app-screen">
+      {mainTab === 'profile' ? (
+        <ProfileScreen data={appData} />
+      ) : (
+        <LearnScreen
+          data={appData}
+          isLoading={isLoading}
+          objectImages={objectImages}
+          onOpenDetail={openDetail}
+        />
+      )}
+      <BottomTabs activeTab={mainTab} onTabChange={setMainTab} />
+    </main>
   );
 }
 
@@ -125,66 +145,125 @@ function LearnScreen({
   const dayGroups = useMemo(() => buildDayGroups(data.objects), [data.objects]);
 
   return (
-    <main className="phone-frame app-screen">
-      <section className="learn-page">
-        <p className="hello">Hello {data.user.display_name}!</p>
-        <h1>See Your Previous Scans</h1>
+    <section className="learn-page">
+      <p className="hello">Hello {data.user.display_name}!</p>
+      <h1>See Your Previous Scans</h1>
 
-        <div className="sort-row" aria-label="Sort scans">
-          <span>SORT BY</span>
-          <button className="pill muted" type="button" disabled>
-            By Type
-          </button>
-          <button className="pill active" type="button">
-            By Date
-          </button>
-        </div>
+      <div className="sort-row" aria-label="Sort scans">
+        <span>SORT BY</span>
+        <button className="pill muted" type="button" disabled>
+          By Type
+        </button>
+        <button className="pill active" type="button">
+          By Date
+        </button>
+      </div>
 
-        {data.isFallback && (
-          <p className="data-note">
-            Demo mode: add Supabase env values to read Snap cloud scan data.
-          </p>
-        )}
+      {data.isFallback && (
+        <p className="data-note">
+          Demo mode: add Supabase env values to read Snap cloud scan data.
+        </p>
+      )}
 
-        <section
-          className={`timeline${dayGroups.length === 1 ? ' timeline--single' : ''}`}
-          aria-busy={isLoading}
-        >
-          {dayGroups.map((group) => (
-            <article className="day-group" key={group.isoDate}>
-              <div className="timeline-dot" />
-              <h2>{group.label}</h2>
-              <div className="day-cards">
-                {group.objects.length === 0 ? (
-                  <div className="empty-card">No Items Scanned :(</div>
-                ) : (
-                  group.objects.map((object) => (
-                    <button
-                      className="scan-card"
-                      key={object.object_id}
-                      type="button"
-                      onClick={() => onOpenDetail(object)}
-                    >
-                      <div className="scan-card-thumb">
-                        <ObjectVisual
-                          imageUrl={objectImages[object.object_id]}
-                          name={object.display_name}
-                        />
-                      </div>
-                      <span className="scan-card-copy">
-                        <small>{object.display_name}</small>
-                        <strong>{object.detected_materials.join(', ')}</strong>
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-            </article>
-          ))}
-        </section>
+      <section
+        className={`timeline${dayGroups.length === 1 ? ' timeline--single' : ''}`}
+        aria-busy={isLoading}
+      >
+        {dayGroups.map((group) => (
+          <article className="day-group" key={group.isoDate}>
+            <div className="timeline-dot" />
+            <h2>{group.label}</h2>
+            <div className="day-cards">
+              {group.objects.length === 0 ? (
+                <div className="empty-card">No Items Scanned :(</div>
+              ) : (
+                group.objects.map((object) => (
+                  <button
+                    className="scan-card"
+                    key={object.object_id}
+                    type="button"
+                    onClick={() => onOpenDetail(object)}
+                  >
+                    <div className="scan-card-thumb">
+                      <ObjectVisual
+                        imageUrl={objectImages[object.object_id]}
+                        name={object.display_name}
+                      />
+                    </div>
+                    <span className="scan-card-copy">
+                      <small>{object.display_name}</small>
+                      <strong>{object.detected_materials.join(', ')}</strong>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </article>
+        ))}
       </section>
-      <BottomTabs />
-    </main>
+    </section>
+  );
+}
+
+function ProfileScreen({ data }: { data: AppData }) {
+  const { user, objects, isFallback } = data;
+  const uniqueMaterials = useMemo(
+    () => new Set(objects.flatMap((object) => object.detected_materials)).size,
+    [objects],
+  );
+  const joinedDate = joinedDateFormatter.format(new Date(user.created_at));
+  const memberSince = memberSinceFormatter.format(new Date(user.created_at));
+
+  return (
+    <section className="profile-page">
+      <h1>Profile</h1>
+
+      <div className="profile-hero">
+        <div aria-hidden="true" className="profile-avatar">
+          <User size={42} strokeWidth={1.8} />
+        </div>
+        <h2>{user.display_name}</h2>
+        <p className="profile-subtitle">Member since {memberSince}</p>
+      </div>
+
+      <section className="profile-section">
+        <h3>Your activity</h3>
+        <div className="profile-stats">
+          <article className="profile-stat">
+            <strong>{objects.length}</strong>
+            <span>Scans logged</span>
+          </article>
+          <article className="profile-stat">
+            <strong>{uniqueMaterials}</strong>
+            <span>Materials tracked</span>
+          </article>
+        </div>
+      </section>
+
+      <section className="profile-section">
+        <h3>Account</h3>
+        <dl className="profile-details">
+          <div>
+            <dt>Display name</dt>
+            <dd>{user.display_name}</dd>
+          </div>
+          <div>
+            <dt>User ID</dt>
+            <dd>{formatUserId(user.user_id)}</dd>
+          </div>
+          <div>
+            <dt>Joined</dt>
+            <dd>{joinedDate}</dd>
+          </div>
+        </dl>
+      </section>
+
+      {isFallback && (
+        <p className="data-note">
+          Demo mode: add Supabase env values to read Snap cloud user data.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -424,18 +503,30 @@ function ActionCard({ action }: { action: string }) {
   );
 }
 
-function BottomTabs() {
+function BottomTabs({
+  activeTab,
+  onTabChange,
+}: {
+  activeTab: MainTab;
+  onTabChange: (tab: MainTab) => void;
+}) {
   const tabs = [
-    ['Learn', GraduationCap, true],
-    ['Log', List, false],
-    ['Quests', Award, false],
-    ['Profile', User, false],
+    ['Learn', GraduationCap, 'learn'],
+    ['Log', List, null],
+    ['Quests', Award, null],
+    ['Profile', User, 'profile'],
   ] as const;
 
   return (
     <nav className="bottom-tabs" aria-label="Matterly tabs">
-      {tabs.map(([label, Icon, active]) => (
-        <button className={active ? 'active' : ''} key={label} type="button" disabled={!active}>
+      {tabs.map(([label, Icon, tabId]) => (
+        <button
+          className={tabId === activeTab ? 'active' : ''}
+          key={label}
+          type="button"
+          disabled={!tabId}
+          onClick={() => tabId && onTabChange(tabId)}
+        >
           <Icon size={20} />
           <span>{label}</span>
         </button>
@@ -543,6 +634,14 @@ function localDateKey(date: Date) {
 function ordinal(day: number) {
   const suffix = day % 10 === 1 && day !== 11 ? 'st' : day % 10 === 2 && day !== 12 ? 'nd' : day % 10 === 3 && day !== 13 ? 'rd' : 'th';
   return `${day}${suffix}`;
+}
+
+function formatUserId(userId: string) {
+  if (userId.length <= 12) {
+    return userId;
+  }
+
+  return `${userId.slice(0, 8)}...${userId.slice(-4)}`;
 }
 
 function formatImpactValue(value?: number | null, unit?: string) {

@@ -3,12 +3,19 @@ import {
   ArrowLeft,
   ArrowUpFromLine,
   Award,
+  CalendarDays,
   Check,
+  Flame,
   GraduationCap,
   List,
+  Lock,
+  ScanFace,
+  Sprout,
+  Boxes,
   User,
   X,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import {
   type AppData,
   type MaterialDetail,
@@ -20,7 +27,25 @@ import {
 import { type GeneratedContent, loadGeneratedContent, prefetchObjectImages } from './generatedContent';
 
 type Screen = 'splash' | 'main' | 'detail';
-type MainTab = 'learn' | 'profile';
+type MainTab = 'learn' | 'log' | 'quests' | 'profile';
+
+type QuestTone = 'teal' | 'green' | 'blue' | 'yellow' | 'red';
+
+type QuestStatus = 'locked' | 'active' | 'completed';
+
+type Quest = {
+  id: string;
+  title: string;
+  description: string;
+  current: number;
+  target: number;
+  completed: boolean;
+  unlocked: boolean;
+  status: QuestStatus;
+  unlockHint?: string;
+  Icon: LucideIcon;
+  tone: QuestTone;
+};
 type SortMode = 'date' | 'type';
 
 type ScanGroup = {
@@ -49,6 +74,13 @@ const joinedDateFormatter = new Intl.DateTimeFormat('en-US', {
 const shortDateFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   day: 'numeric',
+});
+
+const logTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
 });
 
 function App() {
@@ -114,6 +146,15 @@ function App() {
     <main className="phone-frame app-screen">
       {mainTab === 'profile' ? (
         <ProfileScreen data={appData} />
+      ) : mainTab === 'log' ? (
+        <LogScreen
+          data={appData}
+          isLoading={isLoading}
+          objectImages={objectImages}
+          onOpenDetail={openDetail}
+        />
+      ) : mainTab === 'quests' ? (
+        <QuestsScreen data={appData} />
       ) : (
         <LearnScreen
           data={appData}
@@ -226,6 +267,136 @@ function LearnScreen({
                 ))
               )}
             </div>
+          </article>
+        ))}
+      </section>
+    </section>
+  );
+}
+
+function LogScreen({
+  data,
+  isLoading,
+  objectImages,
+  onOpenDetail,
+}: {
+  data: AppData;
+  isLoading: boolean;
+  objectImages: Record<string, string | null>;
+  onOpenDetail: (object: ObjectCard) => void;
+}) {
+  const entries = useMemo(
+    () =>
+      [...data.objects].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      ),
+    [data.objects],
+  );
+
+  return (
+    <section className="log-page">
+      <h1>Scan Log</h1>
+      <p className="log-summary">
+        {entries.length} scan{entries.length === 1 ? '' : 's'} recorded
+      </p>
+
+      {data.isFallback && (
+        <p className="data-note">
+          Demo mode: add Supabase env values to read Snap cloud scan data.
+        </p>
+      )}
+
+      <section className="log-list" aria-busy={isLoading}>
+        {entries.length === 0 ? (
+          <div className="empty-card log-empty">No Items Scanned :(</div>
+        ) : (
+          entries.map((object) => (
+            <button
+              className="log-entry"
+              key={object.object_id}
+              type="button"
+              onClick={() => onOpenDetail(object)}
+            >
+              <div className="scan-card-thumb">
+                <ObjectVisual
+                  imageUrl={objectImages[object.object_id]}
+                  name={object.display_name}
+                />
+              </div>
+              <span className="log-entry-copy">
+                <small>{object.display_name}</small>
+                <strong>{object.detected_materials.join(', ')}</strong>
+                <time dateTime={object.created_at}>
+                  {logTimeFormatter.format(new Date(object.created_at))}
+                </time>
+              </span>
+            </button>
+          ))
+        )}
+      </section>
+    </section>
+  );
+}
+
+function QuestsScreen({ data }: { data: AppData }) {
+  const quests = useMemo(() => buildQuests(data.objects), [data.objects]);
+  const completedCount = quests.filter((quest) => quest.completed).length;
+  const unlockedCount = quests.filter((quest) => quest.unlocked).length;
+
+  return (
+    <section className="quests-page">
+      <h1>Quests</h1>
+      <p className="quests-summary">
+        {completedCount} of {quests.length} completed · {unlockedCount} unlocked
+      </p>
+
+      {data.isFallback && (
+        <p className="data-note">
+          Demo mode: quest progress uses local scan data until Supabase is connected.
+        </p>
+      )}
+
+      <section className="quest-list">
+        {quests.map((quest) => (
+          <article
+            className={`quest-card quest-card--${quest.tone} quest-card--${quest.status}`}
+            key={quest.id}
+          >
+            <div className="quest-card-head">
+              <div className="quest-icon-wrap">
+                <span aria-hidden="true" className={`quest-icon quest-icon--${quest.tone}`}>
+                  {quest.status === 'locked' ? (
+                    <Lock size={22} strokeWidth={2.1} />
+                  ) : (
+                    <quest.Icon size={22} strokeWidth={2.1} />
+                  )}
+                </span>
+                {quest.status === 'completed' && (
+                  <span aria-label="Completed" className="quest-complete-badge">
+                    <Check size={12} strokeWidth={2.8} />
+                  </span>
+                )}
+              </div>
+              <div>
+                <h2>{quest.title}</h2>
+                <p>{quest.status === 'locked' ? quest.unlockHint : quest.description}</p>
+              </div>
+            </div>
+            {quest.status === 'locked' ? (
+              <div className="quest-locked-row">
+                <Lock aria-hidden size={14} strokeWidth={2.2} />
+                <span>Locked</span>
+              </div>
+            ) : (
+              <div className="quest-progress">
+                <div aria-hidden="true" className="quest-progress-bar">
+                  <span style={{ width: `${Math.min(100, (quest.current / quest.target) * 100)}%` }} />
+                </div>
+                <span className="quest-progress-label">
+                  {quest.current}/{quest.target}
+                </span>
+              </div>
+            )}
           </article>
         ))}
       </section>
@@ -540,8 +711,8 @@ function BottomTabs({
 }) {
   const tabs = [
     ['Learn', GraduationCap, 'learn'],
-    ['Log', List, null],
-    ['Quests', Award, null],
+    ['Log', List, 'log'],
+    ['Quests', Award, 'quests'],
     ['Profile', User, 'profile'],
   ] as const;
 
@@ -670,6 +841,104 @@ function buildTypeGroups(objects: ObjectCard[]): ScanGroup[] {
     })
     .sort((a, b) => b.latestAt - a.latestAt)
     .map(({ key, label, objects }) => ({ key, label, objects }));
+}
+
+function buildQuests(objects: ObjectCard[]): Quest[] {
+  const scanCount = objects.length;
+  const uniqueMaterials = new Set(objects.flatMap((object) => object.detected_materials)).size;
+  const uniqueTypes = new Set(objects.map((object) => object.display_name.trim())).size;
+  const uniqueDays = new Set(objects.map((object) => localDateKey(new Date(object.created_at)))).size;
+
+  const questDefs: {
+    id: string;
+    title: string;
+    description: string;
+    current: number;
+    target: number;
+    Icon: LucideIcon;
+    tone: QuestTone;
+    unlockAfter?: string;
+    unlockHint: string;
+  }[] = [
+    {
+      id: 'first-scan',
+      title: 'First Scan',
+      description: 'Log your first object scan in Matterly.',
+      current: scanCount,
+      target: 1,
+      Icon: ScanFace,
+      tone: 'teal',
+      unlockHint: 'Complete First Scan to unlock.',
+    },
+    {
+      id: 'material-explorer',
+      title: 'Material Explorer',
+      description: 'Track 3 different materials across your scans.',
+      current: uniqueMaterials,
+      target: 3,
+      Icon: Sprout,
+      tone: 'green',
+      unlockAfter: 'first-scan',
+      unlockHint: 'Complete First Scan to unlock.',
+    },
+    {
+      id: 'object-variety',
+      title: 'Object Variety',
+      description: 'Scan 2 different kinds of objects.',
+      current: uniqueTypes,
+      target: 2,
+      Icon: Boxes,
+      tone: 'blue',
+      unlockAfter: 'material-explorer',
+      unlockHint: 'Complete Material Explorer to unlock.',
+    },
+    {
+      id: 'consistent-logger',
+      title: 'Consistent Logger',
+      description: 'Scan objects on 2 different days.',
+      current: uniqueDays,
+      target: 2,
+      Icon: CalendarDays,
+      tone: 'yellow',
+      unlockAfter: 'object-variety',
+      unlockHint: 'Complete Object Variety to unlock.',
+    },
+    {
+      id: 'scan-streak',
+      title: 'Scan Streak',
+      description: 'Log 3 total scans to build your material history.',
+      current: scanCount,
+      target: 3,
+      Icon: Flame,
+      tone: 'red',
+      unlockAfter: 'consistent-logger',
+      unlockHint: 'Complete Consistent Logger to unlock.',
+    },
+  ];
+
+  const completionById = Object.fromEntries(
+    questDefs.map((quest) => [quest.id, quest.current >= quest.target]),
+  );
+
+  return questDefs.map((quest) => {
+    const completed = completionById[quest.id];
+    const unlocked = !quest.unlockAfter || completionById[quest.unlockAfter];
+    const status: QuestStatus = completed ? 'completed' : unlocked ? 'active' : 'locked';
+
+    return {
+      id: quest.id,
+      title: quest.title,
+      description: quest.description,
+      current: unlocked ? Math.min(quest.current, quest.target) : 0,
+      target: quest.target,
+      completed,
+      unlocked,
+      status,
+      unlockHint: quest.unlockHint,
+      Icon: quest.Icon,
+      tone: quest.tone,
+    };
+  });
 }
 
 function startOfDay(date: Date) {

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { MaterialDetail, ObjectCard } from './data';
+import { findMaterialDetail, type MaterialDetail, type ObjectCard } from './data';
 
 export type GeneratedContent = {
   image_url?: string | null;
@@ -44,4 +44,28 @@ export async function loadGeneratedContent(
   }
 
   return data as GeneratedContent;
+}
+
+export async function prefetchObjectImages(
+  objects: ObjectCard[],
+  materialDetails: Record<string, MaterialDetail>,
+): Promise<Record<string, string | null>> {
+  const entries = await Promise.all(
+    objects.map(async (object) => {
+      const firstMaterial = object.detected_materials[0];
+      if (!firstMaterial) {
+        return [object.object_id, null] as const;
+      }
+
+      const detail = findMaterialDetail(firstMaterial, materialDetails);
+      if (!detail) {
+        return [object.object_id, null] as const;
+      }
+
+      const content = await loadGeneratedContent(object, detail);
+      return [object.object_id, content?.image_url ?? null] as const;
+    }),
+  );
+
+  return Object.fromEntries(entries);
 }

@@ -4,8 +4,6 @@ import {
   Award,
   BookOpen,
   Check,
-  Medal,
-  Recycle,
   User,
   X,
 } from 'lucide-react';
@@ -17,7 +15,7 @@ import {
   getFallbackData,
   loadAppData,
 } from './data';
-import { type GeneratedContent, loadGeneratedContent } from './generatedContent';
+import { type GeneratedContent, loadGeneratedContent, prefetchObjectImages } from './generatedContent';
 
 type Screen = 'splash' | 'learn' | 'detail';
 
@@ -32,6 +30,7 @@ function App() {
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [appData, setAppData] = useState<AppData>(getFallbackData());
   const [isLoading, setIsLoading] = useState(true);
+  const [objectImages, setObjectImages] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
     loadAppData().then((data) => {
@@ -39,6 +38,24 @@ function App() {
       setIsLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    if (isLoading || appData.objects.length === 0) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    prefetchObjectImages(appData.objects, appData.materialDetails).then((images) => {
+      if (!isCancelled) {
+        setObjectImages(images);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [appData.materialDetails, appData.objects, isLoading]);
 
   const selectedObject = useMemo(
     () => appData.objects.find((object) => object.object_id === selectedObjectId) ?? appData.objects[0],
@@ -60,6 +77,7 @@ function App() {
         key={selectedObject.object_id}
         object={selectedObject}
         materialDetails={appData.materialDetails}
+        initialImageUrl={objectImages[selectedObject.object_id]}
         onBack={() => setScreen('learn')}
       />
     );
@@ -69,6 +87,7 @@ function App() {
     <LearnScreen
       data={appData}
       isLoading={isLoading}
+      objectImages={objectImages}
       onOpenDetail={openDetail}
     />
   );
@@ -93,10 +112,12 @@ function SplashScreen({ onEnter }: { onEnter: () => void }) {
 function LearnScreen({
   data,
   isLoading,
+  objectImages,
   onOpenDetail,
 }: {
   data: AppData;
   isLoading: boolean;
+  objectImages: Record<string, string | null>;
   onOpenDetail: (object: ObjectCard) => void;
 }) {
   const dayGroups = useMemo(() => buildDayGroups(data.objects), [data.objects]);
@@ -139,7 +160,10 @@ function LearnScreen({
                       type="button"
                       onClick={() => onOpenDetail(object)}
                     >
-                      <GeneratedObjectIcon name={object.display_name} />
+                      <ObjectVisual
+                        imageUrl={objectImages[object.object_id]}
+                        name={object.display_name}
+                      />
                       <span>
                         <small>{object.display_name}</small>
                         <strong>{object.detected_materials.join(', ')}</strong>
@@ -160,10 +184,12 @@ function LearnScreen({
 function DetailScreen({
   object,
   materialDetails,
+  initialImageUrl,
   onBack,
 }: {
   object: ObjectCard;
   materialDetails: Record<string, MaterialDetail>;
+  initialImageUrl?: string | null;
   onBack: () => void;
 }) {
   const [activeMaterialName, setActiveMaterialName] = useState(object.detected_materials[0] ?? 'Plastic');
@@ -181,6 +207,7 @@ function DetailScreen({
     : object.object_id;
   const activeGenerated =
     generated?.cacheKey === generatedCacheKey ? generated.content : null;
+  const imageUrl = activeGenerated?.image_url ?? initialImageUrl;
   const quiz = activeGenerated
     ? {
         question: activeGenerated.quiz_question,
@@ -220,7 +247,7 @@ function DetailScreen({
 
       <section className="detail-hero">
         <ObjectVisual
-          imageUrl={activeGenerated?.image_url}
+          imageUrl={imageUrl}
           name={object.display_name}
           size="large"
         />
@@ -253,24 +280,25 @@ function DetailScreen({
 }
 
 function InfoStack({ detail }: { detail: MaterialDetail }) {
+  const baseUrl = import.meta.env.BASE_URL;
   const items = [
     {
       label: detail.material.recyclability_short,
       text: detail.material.recyclability_long,
       tone: 'green',
-      icon: <Recycle size={15} />,
+      iconSrc: `${baseUrl}images/recycle.png`,
     },
     {
       label: detail.material.common_fate_short,
       text: detail.material.common_fate_long,
       tone: 'teal',
-      icon: <Award size={15} />,
+      iconSrc: `${baseUrl}images/fate.png`,
     },
     {
       label: detail.material.persistence_short,
       text: detail.material.persistence_long,
       tone: 'red',
-      icon: <Medal size={15} />,
+      iconSrc: `${baseUrl}images/after_life.png`,
     },
   ];
 
@@ -280,7 +308,9 @@ function InfoStack({ detail }: { detail: MaterialDetail }) {
       <div className="info-stack">
         {items.map((item) => (
           <article className={`info-card ${item.tone}`} key={item.label}>
-            <span>{item.icon}</span>
+            <span className="info-card-icon">
+              <img src={item.iconSrc} alt="" />
+            </span>
             <div>
               <h3>{item.label}</h3>
               <p>{item.text}</p>

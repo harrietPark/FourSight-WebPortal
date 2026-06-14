@@ -348,29 +348,30 @@ button {
   padding: 12px;
 }
 
-.info-card > span {
+.info-card > span.info-card-icon {
   align-items: center;
-  border-radius: 50%;
+  background: var(--soft);
+  border-radius: 6px;
   display: flex;
-  height: 26px;
+  flex: 0 0 30px;
+  height: 30px;
   justify-content: center;
   margin-top: 2px;
-  width: 26px;
+  width: 30px;
 }
 
-.info-card.green > span {
-  background: #e6f8e9;
-  color: #2b9a4d;
+.info-card-icon img {
+  display: block;
+  height: 18px;
+  object-fit: contain;
+  width: 18px;
 }
 
-.info-card.teal > span {
-  background: #e3f7f3;
-  color: var(--teal);
-}
-
-.info-card.red > span {
-  background: #fde9e9;
-  color: #cf5b5d;
+.info-card.green > span.info-card-icon,
+.info-card.teal > span.info-card-icon,
+.info-card.red > span.info-card-icon {
+  background: var(--soft);
+  color: inherit;
 }
 
 .info-card h3 {

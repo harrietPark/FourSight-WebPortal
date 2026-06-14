@@ -9,25 +9,44 @@ export const normalizeMaterialKey = (value: string) =>
     .replace(/^-|-$/g, '');
 
 const MATERIAL_ALIAS: Record<string, string> = {
-  'abs-plastic': 'plastic',
-  'abs': 'plastic',
-  'polypropylene': 'plastic',
-  'silicone': 'plastic',
-  'polyethylene': 'polyethylene',
-  'paperboard': 'paperboard',
-  'cardboard': 'cardboard',
-  'aluminum': 'plastic',
-  'aluminium': 'plastic',
-  'lcd-glass': 'plastic',
-  'tempered-glass': 'plastic',
-  'soda-lime-glass': 'plastic',
-  'glass': 'plastic',
+  'abs-plastic': 'abs',
+  abs: 'abs',
+  plastic: 'pp',
+  polypropylene: 'pp',
+  polyethylene: 'hdpe',
+  pet: 'pet',
+  paperboard: 'paperboard',
+  cardboard: 'paperboard',
+  corrugated: 'paperboard',
+  aluminum: 'aluminum',
+  aluminium: 'aluminum',
+  'lcd-glass': 'glass',
+  'tempered-glass': 'glass',
+  'soda-lime-glass': 'glass',
+  glass: 'glass',
+  silicone: 'silicone',
+  rubber: 'rubber',
+  wood: 'wood',
+  cotton: 'cotton',
+  polyester: 'polyester',
+  polycarbonate: 'pc',
+  pvc: 'pvc',
+  polystyrene: 'ps',
+  styrofoam: 'ps',
+  foam: 'ps',
+  ldpe: 'ldpe',
+  hdpe: 'hdpe',
+  lithium: 'lithium_compounds',
+  bamboo: 'bamboo',
+  tpe: 'tpe',
+  pbt: 'pbt',
+  'pe-lining': 'pe_lining',
 };
 
 /** Maps scanned material names to a material_id that exists in the materials table. */
 export function resolveMaterialId(materialNameOrKey: string) {
   const key = normalizeMaterialKey(materialNameOrKey);
-  return MATERIAL_ALIAS[key] ?? key;
+  return MATERIAL_ALIAS[key] ?? key.replace(/-/g, '_');
 }
 
 export type UserData = {
@@ -397,12 +416,31 @@ export const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 
-const uniqueMaterialKeys = (objects: ObjectCard[]) =>
-  Array.from(new Set(objects.flatMap((object) => object.detected_materials.map(resolveMaterialId))));
+const uniqueMaterialKeys = (objects: ObjectCard[]) => {
+  const keys = new Set<string>();
+
+  for (const object of objects) {
+    for (const material of object.detected_materials) {
+      keys.add(normalizeMaterialKey(material));
+      keys.add(resolveMaterialId(material));
+    }
+  }
+
+  for (const key of [...keys]) {
+    const alias = MATERIAL_ALIAS[key];
+    if (alias) {
+      keys.add(alias);
+    }
+  }
+
+  return Array.from(keys);
+};
 
 export const findMaterialDetail = (materialName: string, details: Record<string, MaterialDetail>) => {
-  const storageId = resolveMaterialId(materialName);
-  const detail = details[storageId];
+  const preferredId = resolveMaterialId(materialName);
+  const normalizedId = normalizeMaterialKey(materialName);
+  const detail =
+    details[preferredId] ?? details[normalizedId] ?? Object.values(details)[0];
 
   if (!detail) {
     return undefined;
@@ -412,7 +450,7 @@ export const findMaterialDetail = (materialName: string, details: Record<string,
     ...detail,
     material: {
       ...detail.material,
-      material_id: storageId,
+      material_id: detail.material.material_id,
       display_name: materialName,
     },
   };
@@ -518,13 +556,15 @@ export async function loadAppData(): Promise<AppData> {
       {},
     );
 
+    const hasDbMaterials = Object.keys(materialDetails).length > 0;
+
     return {
       user: {
         ...(user as UserData),
         user_id: DEMO_USER_ID,
       },
       objects: objectRows,
-      materialDetails: { ...fallbackMaterials, ...materialDetails },
+      materialDetails: hasDbMaterials ? materialDetails : fallbackMaterials,
       isFallback: false,
     };
   } catch (error) {

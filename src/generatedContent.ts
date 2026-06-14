@@ -20,13 +20,108 @@ const functionName =
 export const contentSupabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
+const IMAGE_GENERATION_GAP_MS = 13_000;
+let lastImageInvokeAt = 0;
+let imageInvokeQueue = Promise.resolve();
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+async function waitForImageGenerationSlot() {
+  const now = Date.now();
+  const waitMs = Math.max(0, IMAGE_GENERATION_GAP_MS - (now - lastImageInvokeAt));
+  if (waitMs > 0) {
+    await sleep(waitMs);
+  }
+  lastImageInvokeAt = Date.now();
+}
+
+function enqueueImageGeneration<T>(task: () => Promise<T>): Promise<T> {
+  const run = imageInvokeQueue.then(task, task);
+  imageInvokeQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 function isGeneratedContent(value: unknown): value is GeneratedContent {
   if (!value || typeof value !== 'object') {
     return false;
   }
 
   const record = value as Record<string, unknown>;
-  return typeof record.quiz_question === 'string' && typeof record.action_item === 'string';
+  const hasImage = typeof record.image_url === 'string' && record.image_url.length > 0;
+  const hasQuiz = typeof record.quiz_question === 'string';
+  return hasImage || hasQuiz;
+}
+
+function storageImagePath(objectId: string) {
+  return `objects/${objectId.replace(/[^a-zA-Z0-9-_]/g, '-')}.png`;
+}
+
+async function fetchStorageImageUrl(objectId: string): Promise<string | null> {
+  if (!contentSupabase) {
+    return null;
+  }
+
+  const { data } = contentSupabase.storage.from('generated-assets').getPublicUrl(storageImagePath(objectId));
+
+  try {
+    const response = await fetch(data.publicUrl, { method: 'HEAD' });
+    return response.ok ? data.publicUrl : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchCachedContent(
+  objectId: string,
+  materialId?: string,
+): Promise<GeneratedContent | null> {
+  if (!contentSupabase) {
+    return null;
+  }
+
+  if (materialId) {
+    const { data, error } = await contentSupabase
+      .from('generated_object_content')
+      .select('*')
+      .eq('object_id', objectId)
+      .eq('material_id', materialId)
+      .maybeSingle();
+
+    if (!error && isGeneratedContent(data)) {
+      return data;
+    }
+  }
+
+  const { data: byObject, error: byObjectError } = await contentSupabase
+    .from('generated_object_content')
+    .select('*')
+    .eq('object_id', objectId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!byObjectError && isGeneratedContent(byObject)) {
+    return byObject;
+  }
+
+  const storageUrl = await fetchStorageImageUrl(objectId);
+  if (!storageUrl) {
+    return null;
+  }
+
+  return {
+    image_url: storageUrl,
+    quiz_question: '',
+    quiz_answer: false,
+    action_item: '',
+  };
 }
 
 function withNaturalQuiz(
@@ -52,69 +147,74 @@ function withNaturalQuiz(
   };
 }
 
-export async function fetchCachedContent(
-  objectId: string,
-  materialId: string,
-): Promise<GeneratedContent | null> {
-  if (!contentSupabase) {
-    return null;
-  }
-
-  const { data, error } = await contentSupabase
-    .from('generated_object_content')
-    .select('*')
-    .eq('object_id', objectId)
-    .eq('material_id', materialId)
-    .maybeSingle();
-
-  if (error || !isGeneratedContent(data)) {
-    return null;
-  }
-
-  return data;
-}
-
 export async function loadGeneratedContent(
   object: ObjectCard,
-  detail: MaterialDetail,
+  detail?: MaterialDetail,
 ): Promise<GeneratedContent | null> {
   if (!contentSupabase) {
     return null;
   }
 
-  const materialId = detail.material.material_id;
+  const materialId = detail?.material.material_id;
   const cached = await fetchCachedContent(object.object_id, materialId);
   const cachedQuizOk =
-    Boolean(cached?.quiz_question) && isQuizNatural(cached!.quiz_question, object.display_name);
+    Boolean(cached?.quiz_question) &&
+    cached!.quiz_question.length > 0 &&
+    isQuizNatural(cached!.quiz_question, object.display_name);
 
   if (cached?.image_url && cachedQuizOk && cached.action_item) {
-    return cached;
+    return detail ? withNaturalQuiz(cached, object, detail) : cached;
   }
 
-  const { data, error } = await contentSupabase.functions.invoke(functionName, {
-    body: {
-      object_id: object.object_id,
-      display_name: object.display_name,
-      description: object.description ?? null,
-      material_id: materialId,
-      material_display_name: detail.material.display_name,
-      detected_materials: object.detected_materials,
-      myths: detail.material.myths,
-      quiz_prompt: `Write one casual true/false question about recycling or disposing of a ${object.display_name}. Focus on ${detail.material.display_name}. Sound like a friend asking trivia — not a textbook. Never mention unrelated objects like paper cups unless the scanned item is drinkware.`,
-    },
-  });
+  const needsImage = !cached?.image_url;
 
-  if (error) {
-    console.warn('Generated content function failed. Keeping local fallback content.', error);
-    return cached ? withNaturalQuiz(cached, object, detail) : null;
-  }
+  const invokeGeneration = async () => {
+    const { data, error } = await contentSupabase!.functions.invoke(functionName, {
+      body: {
+        object_id: object.object_id,
+        display_name: object.display_name,
+        description: object.description ?? null,
+        material_id: materialId,
+        material_display_name: detail?.material.display_name ?? object.detected_materials[0],
+        detected_materials: object.detected_materials,
+        myths: detail?.material.myths ?? [],
+        quiz_prompt: detail
+          ? `Write one casual true/false question about recycling or disposing of a ${object.display_name}. Focus on ${detail.material.display_name}. Sound like a friend asking trivia — not a textbook. Never mention unrelated objects like paper cups unless the scanned item is drinkware.`
+          : undefined,
+      },
+    });
 
-  if (!isGeneratedContent(data)) {
-    console.warn('Generated content function returned an invalid payload.', data);
-    return cached ? withNaturalQuiz(cached, object, detail) : null;
-  }
+    if (error) {
+      console.warn('Generated content function failed. Keeping local fallback content.', error);
+      if (cached?.image_url) {
+        return detail ? withNaturalQuiz(cached, object, detail) : cached;
+      }
+      return null;
+    }
 
-  return withNaturalQuiz(data, object, detail);
+    if (!isGeneratedContent(data)) {
+      console.warn('Generated content function returned an invalid payload.', data);
+      if (cached?.image_url) {
+        return detail ? withNaturalQuiz(cached, object, detail) : cached;
+      }
+      return null;
+    }
+
+    if (!detail) {
+      return data;
+    }
+
+    return withNaturalQuiz(data, object, detail);
+  };
+
+  const result = needsImage
+    ? await enqueueImageGeneration(async () => {
+        await waitForImageGenerationSlot();
+        return invokeGeneration();
+      })
+    : await invokeGeneration();
+
+  return result;
 }
 
 export async function prefetchObjectImages(
@@ -123,17 +223,7 @@ export async function prefetchObjectImages(
 ): Promise<Record<string, string | null>> {
   const entries = await Promise.all(
     objects.map(async (object) => {
-      const firstMaterial = object.detected_materials[0];
-      if (!firstMaterial) {
-        return [object.object_id, null] as const;
-      }
-
-      const detail = findMaterialDetail(firstMaterial, materialDetails);
-      if (!detail) {
-        return [object.object_id, null] as const;
-      }
-
-      const cached = await fetchCachedContent(object.object_id, detail.material.material_id);
+      const cached = await fetchCachedContent(object.object_id);
       return [object.object_id, cached?.image_url ?? null] as const;
     }),
   );
@@ -141,20 +231,28 @@ export async function prefetchObjectImages(
   return Object.fromEntries(entries);
 }
 
+export async function ensureObjectImagesSequential(
+  objects: ObjectCard[],
+  materialDetails: Record<string, MaterialDetail>,
+  onProgress?: (objectId: string, imageUrl: string | null) => void,
+): Promise<Record<string, string | null>> {
+  const results: Record<string, string | null> = {};
+
+  for (const object of objects) {
+    const imageUrl = await ensureObjectImage(object, materialDetails);
+    results[object.object_id] = imageUrl;
+    onProgress?.(object.object_id, imageUrl);
+  }
+
+  return results;
+}
+
 export async function ensureObjectImage(
   object: ObjectCard,
   materialDetails: Record<string, MaterialDetail>,
 ): Promise<string | null> {
   const firstMaterial = object.detected_materials[0];
-  if (!firstMaterial) {
-    return null;
-  }
-
-  const detail = findMaterialDetail(firstMaterial, materialDetails);
-  if (!detail) {
-    return null;
-  }
-
+  const detail = firstMaterial ? findMaterialDetail(firstMaterial, materialDetails) : undefined;
   const content = await loadGeneratedContent(object, detail);
   return content?.image_url ?? null;
 }

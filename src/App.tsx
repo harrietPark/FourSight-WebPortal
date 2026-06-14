@@ -30,7 +30,7 @@ import {
 } from './data';
 import {
   type GeneratedContent,
-  ensureObjectImage,
+  ensureObjectImagesSequential,
   loadGeneratedContent,
   prefetchObjectImages,
   subscribeToGeneratedImages,
@@ -141,28 +141,13 @@ function App() {
       setObjectImages((current) => ({ ...current, ...cachedImages }));
 
       const missingObjects = appData.objects.filter((object) => !cachedImages[object.object_id]);
-      const results = await Promise.allSettled(
-        missingObjects.map(async (object) => {
-          const imageUrl = await ensureObjectImage(object, appData.materialDetails);
-          return [object.object_id, imageUrl] as const;
-        }),
-      );
+      await ensureObjectImagesSequential(missingObjects, appData.materialDetails, (objectId, imageUrl) => {
+        if (isCancelled || !imageUrl) {
+          return;
+        }
 
-      if (isCancelled) {
-        return;
-      }
-
-      const generatedImages = Object.fromEntries(
-        results
-          .filter((result): result is PromiseFulfilledResult<readonly [string, string | null]> => {
-            return result.status === 'fulfilled' && Boolean(result.value[1]);
-          })
-          .map((result) => result.value),
-      );
-
-      if (Object.keys(generatedImages).length > 0) {
-        setObjectImages((current) => ({ ...current, ...generatedImages }));
-      }
+        setObjectImages((current) => ({ ...current, [objectId]: imageUrl }));
+      });
     }
 
     void syncImages();

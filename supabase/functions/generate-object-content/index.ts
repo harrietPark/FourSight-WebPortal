@@ -9,7 +9,7 @@ const corsHeaders = {
 type GenerateRequest = {
   object_id: string;
   display_name: string;
-  material_id: string;
+  material_id?: string;
   material_display_name?: string;
   detected_materials?: string[];
   myths?: string[];
@@ -48,69 +48,86 @@ Deno.serve(async (req) => {
   try {
     const body = (await req.json()) as GenerateRequest;
 
-    if (!body.object_id || !body.display_name || !body.material_id) {
-      return json({ error: 'Missing required fields' }, 400);
+    if (!body.object_id || !body.display_name) {
+      return json({ error: 'Missing object_id or display_name' }, 400);
     }
 
     const supabase = getSupabaseClient();
-    const materialId = await resolveMaterialIdFromDb(supabase, body.material_id);
+    const materialHint =
+      body.material_id ?? body.detected_materials?.[0] ?? body.material_display_name ?? 'abs';
+    const materialId = await resolveMaterialIdFromDb(supabase, materialHint);
     const request = { ...body, material_id: materialId };
+    const storagePath = objectImagePath(body.object_id);
 
-    const { data: cached } = await supabase
+    const { data: cachedRows } = await supabase
       .from('generated_object_content')
       .select('*')
       .eq('object_id', request.object_id)
-      .eq('material_id', request.material_id)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    const cachedRow = (cachedRows?.[0] ?? null) as CachedContent | null;
+    const existingStorageUrl = await getExistingStorageUrl(supabase, storagePath);
+    const cachedImageUrl = cachedRow?.image_url ?? existingStorageUrl;
+    const needsImage = !cachedImageUrl;
+    const needsText = !cachedRow?.quiz_question || !cachedRow?.action_item;
+
+    if (!needsImage && !needsText && cachedRow) {
+      return json({
+        ...cachedRow,
+        image_url: cachedImageUrl,
+      });
+    }
+
+    let image: GeneratedImage = {
+      image_url: cachedImageUrl,
+      image_prompt: cachedRow?.image_prompt ?? '',
+    };
+
+    if (needsImage) {
+      try {
+        image = await generateImageWithRetry(request, supabase, storagePath);
+      } catch (error) {
+        console.error('Image generation failed:', error);
+      }
+    }
+
+    let aiText: GeneratedText;
+    if (needsText) {
+      try {
+        aiText = await generateTextContent(request);
+      } catch (error) {
+        console.error('Text generation failed:', error);
+        aiText = defaultText(request);
+      }
+    } else {
+      aiText = textFromCache(cachedRow!);
+    }
+
+    const payload = {
+      object_id: request.object_id,
+      material_id: materialId,
+      image_url: image.image_url,
+      image_prompt: image.image_prompt,
+      quiz_question: aiText.quiz_question,
+      quiz_answer: aiText.quiz_answer,
+      quiz_explanation: aiText.quiz_explanation,
+      action_item: aiText.action_item,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: saved, error: saveError } = await supabase
+      .from('generated_object_content')
+      .upsert(payload)
+      .select('*')
       .maybeSingle();
 
-    const cachedRow = cached as CachedContent | null;
-    const needsText = !cachedRow?.quiz_question || !cachedRow?.action_item;
-    const needsImage = !cachedRow?.image_url;
-
-    if (!needsText && !needsImage) {
-      return json(cachedRow);
+    if (saveError) {
+      console.warn('generated_object_content save failed; returning payload anyway:', saveError.message);
+      return json(payload);
     }
 
-    const [textResult, imageResult] = await Promise.allSettled([
-      needsText ? generateTextContent(request) : Promise.resolve(textFromCache(cachedRow!)),
-      needsImage ? generateImage(request, supabase) : Promise.resolve(imageFromCache(cachedRow!)),
-    ]);
-
-    if (textResult.status === 'rejected') {
-      throw textResult.reason;
-    }
-
-    const aiText = textResult.value;
-    const image =
-      imageResult.status === 'fulfilled'
-        ? imageResult.value
-        : { image_url: cachedRow?.image_url ?? null, image_prompt: cachedRow?.image_prompt ?? '' };
-
-    if (imageResult.status === 'rejected') {
-      console.error('Image generation failed:', imageResult.reason);
-    }
-
-    const { data, error } = await supabase
-      .from('generated_object_content')
-      .upsert({
-        object_id: request.object_id,
-        material_id: request.material_id,
-        image_url: image.image_url,
-        image_prompt: image.image_prompt,
-        quiz_question: aiText.quiz_question,
-        quiz_answer: aiText.quiz_answer,
-        quiz_explanation: aiText.quiz_explanation,
-        action_item: aiText.action_item,
-        updated_at: new Date().toISOString(),
-      })
-      .select('*')
-      .single();
-
-    if (error) {
-      throw error;
-    }
-
-    return json(data);
+    return json(saved ?? payload);
   } catch (error) {
     console.error(error);
     return json({ error: 'Failed to generate content', detail: String(error) }, 500);
@@ -128,6 +145,10 @@ function getSupabaseClient() {
   return createClient(url, key);
 }
 
+function objectImagePath(objectId: string) {
+  return `objects/${sanitizeFilePart(objectId)}.png`;
+}
+
 function textFromCache(cached: CachedContent): GeneratedText {
   return {
     quiz_question: cached.quiz_question ?? '',
@@ -137,10 +158,13 @@ function textFromCache(cached: CachedContent): GeneratedText {
   };
 }
 
-function imageFromCache(cached: CachedContent): GeneratedImage {
+function defaultText(body: GenerateRequest): GeneratedText {
+  const materialName = body.material_display_name ?? body.detected_materials?.[0] ?? 'this material';
   return {
-    image_url: cached.image_url ?? null,
-    image_prompt: cached.image_prompt ?? '',
+    quiz_question: `Can you put a ${body.display_name} in your regular curbside recycling bin?`,
+    quiz_answer: false,
+    quiz_explanation: `${body.display_name} often mixes ${materialName} with other parts, which changes how it should be sorted.`,
+    action_item: `Check local drop-off rules before disposing of your ${body.display_name}.`,
   };
 }
 
@@ -156,53 +180,123 @@ function normalizeMaterialKey(value: string) {
 }
 
 const MATERIAL_ALIAS: Record<string, string> = {
-  'abs-plastic': 'plastic',
-  abs: 'plastic',
-  polypropylene: 'plastic',
-  silicone: 'plastic',
-  polyethylene: 'polyethylene',
+  'abs-plastic': 'abs',
+  abs: 'abs',
+  plastic: 'pp',
+  polypropylene: 'pp',
+  polyethylene: 'hdpe',
+  pet: 'pet',
   paperboard: 'paperboard',
-  cardboard: 'cardboard',
-  aluminum: 'plastic',
-  aluminium: 'plastic',
-  'lcd-glass': 'plastic',
-  'tempered-glass': 'plastic',
-  'soda-lime-glass': 'plastic',
-  glass: 'plastic',
+  cardboard: 'paperboard',
+  corrugated: 'paperboard',
+  aluminum: 'aluminum',
+  aluminium: 'aluminum',
+  'lcd-glass': 'glass',
+  'tempered-glass': 'glass',
+  'soda-lime-glass': 'glass',
+  glass: 'glass',
+  silicone: 'silicone',
+  rubber: 'rubber',
+  wood: 'wood',
+  cotton: 'cotton',
+  polyester: 'polyester',
+  polycarbonate: 'pc',
+  pvc: 'pvc',
+  polystyrene: 'ps',
+  styrofoam: 'ps',
+  foam: 'ps',
+  ldpe: 'ldpe',
+  hdpe: 'hdpe',
+  lithium: 'lithium_compounds',
+  bamboo: 'bamboo',
+  tpe: 'tpe',
+  pbt: 'pbt',
+  'pe-lining': 'pe_lining',
 };
 
 function resolveMaterialId(materialId: string) {
   const key = normalizeMaterialKey(materialId);
-  return MATERIAL_ALIAS[key] ?? key;
+  return MATERIAL_ALIAS[key] ?? key.replace(/-/g, '_');
 }
 
 async function resolveMaterialIdFromDb(
   supabase: ReturnType<typeof createClient>,
   materialId: string,
 ): Promise<string> {
-  const resolved = resolveMaterialId(materialId);
-  const { data } = await supabase
-    .from('materials')
-    .select('material_id')
-    .eq('material_id', resolved)
-    .maybeSingle();
+  const candidates = [...new Set([
+    resolveMaterialId(materialId),
+    normalizeMaterialKey(materialId).replace(/-/g, '_'),
+    materialId,
+    materialId.toLowerCase(),
+  ])];
 
-  if (data?.material_id) {
-    return data.material_id;
+  for (const candidate of candidates) {
+    const { data } = await supabase
+      .from('materials')
+      .select('material_id')
+      .eq('material_id', candidate)
+      .maybeSingle();
+
+    if (data?.material_id) {
+      return data.material_id;
+    }
   }
 
-  const { data: fallback } = await supabase
-    .from('materials')
-    .select('material_id')
-    .eq('material_id', 'plastic')
-    .maybeSingle();
+  const displayHint = materialId.replace(/[-_]/g, ' ').trim();
+  if (displayHint.length > 2) {
+    const { data: byName } = await supabase
+      .from('materials')
+      .select('material_id, display_name')
+      .ilike('display_name', `%${displayHint}%`)
+      .limit(1)
+      .maybeSingle();
 
-  return fallback?.material_id ?? resolved;
+    if (byName?.material_id) {
+      return byName.material_id;
+    }
+  }
+
+  const { data: anyMaterial } = await supabase.from('materials').select('material_id').limit(1).maybeSingle();
+
+  if (anyMaterial?.material_id) {
+    console.warn(`Material "${materialId}" not found; using "${anyMaterial.material_id}"`);
+    return anyMaterial.material_id;
+  }
+
+  return 'abs';
+}
+
+async function getExistingStorageUrl(
+  supabase: ReturnType<typeof createClient>,
+  path: string,
+): Promise<string | null> {
+  const { data } = supabase.storage.from('generated-assets').getPublicUrl(path);
+  const url = data.publicUrl;
+
+  try {
+    const head = await fetch(url, { method: 'HEAD' });
+    return head.ok ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRateLimitWaitMs(errorText: string) {
+  const match = errorText.match(/try again in (\d+(?:\.\d+)?)s/i);
+  if (!match) {
+    return 13_000;
+  }
+
+  return Math.ceil(Number(match[1]) * 1000) + 500;
 }
 
 async function generateTextContent(body: GenerateRequest): Promise<GeneratedText> {
   const myths = body.myths ?? [];
-  const materialName = body.material_display_name ?? body.material_id;
+  const materialName = body.material_display_name ?? body.detected_materials?.[0] ?? body.material_id ?? 'material';
   const detectedMaterials = body.detected_materials ?? [];
   const isDrinkware = /cup|mug|coffee|soda|bottle/i.test(body.display_name);
   const relevantMyths = myths.filter((myth) => {
@@ -272,9 +366,38 @@ Return JSON only:
   return JSON.parse(data.choices[0].message.content) as GeneratedText;
 }
 
+async function generateImageWithRetry(
+  body: GenerateRequest,
+  supabase: ReturnType<typeof createClient>,
+  storagePath: string,
+  maxAttempts = 4,
+): Promise<GeneratedImage> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await generateImage(body, supabase, storagePath);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const message = lastError.message;
+
+      if (!message.includes('rate_limit') && !message.includes('Rate limit')) {
+        throw lastError;
+      }
+
+      const waitMs = parseRateLimitWaitMs(message);
+      console.warn(`Image rate limit hit; retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxAttempts})`);
+      await sleep(waitMs);
+    }
+  }
+
+  throw lastError ?? new Error('Image generation failed after retries');
+}
+
 async function generateImage(
   body: GenerateRequest,
   supabase: ReturnType<typeof createClient>,
+  storagePath: string,
 ): Promise<GeneratedImage> {
   const material = body.detected_materials?.[0] ?? body.material_display_name ?? 'mixed materials';
   const image_prompt =
@@ -322,9 +445,7 @@ async function generateImage(
     return { image_url: null, image_prompt };
   }
 
-  const fileName = `objects/${sanitizeFilePart(body.object_id)}-${sanitizeFilePart(body.material_id)}.png`;
-
-  const { error } = await supabase.storage.from('generated-assets').upload(fileName, bytes, {
+  const { error } = await supabase.storage.from('generated-assets').upload(storagePath, bytes, {
     contentType: 'image/png',
     upsert: true,
   });
@@ -334,7 +455,7 @@ async function generateImage(
     return { image_url: null, image_prompt };
   }
 
-  const { data: publicUrl } = supabase.storage.from('generated-assets').getPublicUrl(fileName);
+  const { data: publicUrl } = supabase.storage.from('generated-assets').getPublicUrl(storagePath);
 
   return {
     image_url: publicUrl.publicUrl,

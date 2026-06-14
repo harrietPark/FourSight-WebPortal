@@ -196,12 +196,14 @@ button {
   z-index: 0;
 }
 
-.day-group:last-child::after {
+.day-group:last-child::after,
+.day-group:only-child::after {
   bottom: 28px;
 }
 
 .timeline--single .day-group::after {
-  display: none;
+  left: 15px;
+  top: 34px;
 }
 
 .timeline-dot {
@@ -733,15 +735,8 @@ button {
   width: 42px;
 }
 
-.action-card-icon .object-icon {
-  background: transparent;
-  box-shadow: none;
-  height: 34px;
-  width: 34px;
-}
-
-.action-card-icon .icon-shadow {
-  display: none;
+.action-card-icon svg {
+  color: #fff;
 }
 
 .action-card span {

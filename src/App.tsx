@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowUpFromLine,
   Award,
   Check,
   GraduationCap,
@@ -415,7 +416,7 @@ function ActionCard({ action }: { action: string }) {
   return (
     <section className="action-card">
       <div className="action-card-icon">
-        <GeneratedObjectIcon name="Reusable mug" size="small" />
+        <ArrowUpFromLine aria-hidden size={22} strokeWidth={2.2} />
       </div>
       <span>UPSTREAM ACTION</span>
       <h2>{action}</h2>

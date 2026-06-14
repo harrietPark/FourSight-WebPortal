@@ -85,7 +85,6 @@ function SplashScreen({ onEnter }: { onEnter: () => void }) {
       <section className="splash-content">
         <h1>matterly</h1>
         <p>Spectacles Companion App</p>
-        <span className="splash-note">3D assets coming soon</span>
       </section>
     </main>
   );

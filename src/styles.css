@@ -1,19 +1,18 @@
 :root {
   color: #111514;
   background: #f4f1ef;
-  font-family:
-    Inter, ui-rounded, "SF Pro Rounded", "Avenir Next", system-ui, -apple-system,
-    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: Roboto, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --teal: #14b89e;
-  --teal-dark: #0c8f7d;
+  --teal: #0bb695;
+  --teal-dark: #099a80;
   --ink: #1b2522;
   --muted: #7d8884;
-  --soft: #f1f1f1;
+  --soft: #f3f3f3;
   --line: #dfe7e4;
-  --card: #f4f4f4;
+  --card: #f3f3f3;
   --shadow: 0 16px 36px rgba(20, 42, 38, 0.16);
+  --font-display: Gugi, cursive;
 }
 
 * {
@@ -54,26 +53,20 @@ button {
 }
 
 .splash-content h1 {
+  font-family: var(--font-display);
   font-size: clamp(4.6rem, 19vw, 5.5rem);
-  font-weight: 700;
-  letter-spacing: -0.08em;
+  font-weight: 400;
+  letter-spacing: -0.02em;
   line-height: 0.9;
   margin: 0 0 16px;
 }
 
 .splash-content p {
+  font-family: Roboto, sans-serif;
   font-size: 1.1rem;
+  font-weight: 400;
   margin: 0;
   opacity: 0.92;
-}
-
-.splash-note {
-  color: #e81414;
-  display: block;
-  font-size: 1rem;
-  line-height: 2.7;
-  margin-top: 68px;
-  white-space: pre-line;
 }
 
 .app-screen {
@@ -91,9 +84,10 @@ button {
 
 .learn-page h1 {
   color: #26302d;
+  font-family: var(--font-display);
   font-size: clamp(1.7rem, 8vw, 2.15rem);
-  font-weight: 900;
-  letter-spacing: -0.04em;
+  font-weight: 400;
+  letter-spacing: -0.02em;
   line-height: 1.08;
   margin: 0 0 28px;
 }
@@ -120,19 +114,19 @@ button {
 }
 
 .pill.muted {
-  background: #f1f1f1;
+  background: var(--soft);
   opacity: 1;
 }
 
 .pill.active {
-  background: #eeeeee;
+  background: var(--soft);
 }
 
 .data-note {
-  background: #ecfffb;
-  border: 1px solid #bdeee4;
+  background: #e8faf6;
+  border: 1px solid #b8ebe0;
   border-radius: 16px;
-  color: #147b6d;
+  color: var(--teal-dark);
   font-size: 0.76rem;
   margin: -8px 0 20px;
   padding: 10px 12px;
@@ -286,8 +280,9 @@ button {
 
 .detail-hero h1 {
   color: #51504b;
+  font-family: var(--font-display);
   font-size: 1.05rem;
-  font-weight: 800;
+  font-weight: 400;
   margin: 10px 0 14px;
 }
 
@@ -370,7 +365,7 @@ button {
 
 .info-card.teal > span {
   background: #e3f7f3;
-  color: #0d9b87;
+  color: var(--teal);
 }
 
 .info-card.red > span {
@@ -388,7 +383,7 @@ button {
 }
 
 .info-card.teal h3 {
-  color: #0d9b87;
+  color: var(--teal);
 }
 
 .info-card.red h3 {
@@ -588,7 +583,7 @@ button {
   align-items: center;
   background:
     radial-gradient(circle at 40% 32%, #ffffff 0 18%, transparent 19%),
-    linear-gradient(145deg, #f4f4f4, #dddddd);
+    linear-gradient(145deg, #f3f3f3, #dddddd);
   border-radius: 17px;
   display: inline-flex;
   flex: 0 0 58px;
@@ -613,7 +608,7 @@ button {
 }
 
 .generated-object-image {
-  background: #f2f2f2;
+  background: var(--soft);
   border: 0;
   border-radius: 17px;
   box-shadow: 0 8px 18px rgba(30, 42, 39, 0.1);
@@ -688,7 +683,7 @@ button {
 }
 
 .soda-cup-art {
-  background: linear-gradient(180deg, #ffffff 0 30%, #e93335 31% 72%, #f1f1f1 73%);
+  background: linear-gradient(180deg, #ffffff 0 30%, #e93335 31% 72%, #f3f3f3 73%);
   border-radius: 4px 4px 12px 12px;
   height: 42px;
   transform: rotate(-3deg);
@@ -740,7 +735,7 @@ button {
   body {
     align-items: center;
     background:
-      radial-gradient(circle at 20% 20%, rgba(20, 184, 158, 0.12), transparent 24%),
+      radial-gradient(circle at 20% 20%, rgba(11, 182, 149, 0.12), transparent 24%),
       #f4f1ef;
     display: flex;
     justify-content: center;

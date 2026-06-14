@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   ArrowUpFromLine,
@@ -23,9 +23,16 @@ import {
   findMaterialDetail,
   getFallbackData,
   loadAppData,
+  subscribeToScanUpdates,
   DEMO_USER_ID,
 } from './data';
-import { type GeneratedContent, loadGeneratedContent, prefetchObjectImages } from './generatedContent';
+import {
+  type GeneratedContent,
+  ensureObjectImage,
+  loadGeneratedContent,
+  prefetchObjectImages,
+  subscribeToGeneratedImages,
+} from './generatedContent';
 
 type Screen = 'splash' | 'main' | 'detail';
 type MainTab = 'learn' | 'log' | 'quests' | 'profile';
@@ -92,30 +99,64 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [objectImages, setObjectImages] = useState<Record<string, string | null>>({});
 
+  const refreshAppData = useCallback(async () => {
+    const data = await loadAppData();
+    setAppData(data);
+    setIsLoading(false);
+    return data;
+  }, []);
+
   useEffect(() => {
-    loadAppData().then((data) => {
-      setAppData(data);
-      setIsLoading(false);
+    void refreshAppData();
+  }, [refreshAppData]);
+
+  useEffect(() => {
+    return subscribeToScanUpdates(() => {
+      void refreshAppData();
+    });
+  }, [refreshAppData]);
+
+  useEffect(() => {
+    return subscribeToGeneratedImages((objectId, imageUrl) => {
+      setObjectImages((current) => ({ ...current, [objectId]: imageUrl }));
     });
   }, []);
 
   useEffect(() => {
-    if (isLoading || appData.objects.length === 0) {
+    if (isLoading || appData.isFallback || appData.objects.length === 0) {
       return;
     }
 
     let isCancelled = false;
 
-    prefetchObjectImages(appData.objects, appData.materialDetails).then((images) => {
-      if (!isCancelled) {
-        setObjectImages(images);
+    async function syncImages() {
+      const cachedImages = await prefetchObjectImages(appData.objects, appData.materialDetails);
+      if (isCancelled) {
+        return;
       }
-    });
+
+      setObjectImages((current) => ({ ...current, ...cachedImages }));
+
+      for (const object of appData.objects) {
+        if (isCancelled || cachedImages[object.object_id]) {
+          continue;
+        }
+
+        const imageUrl = await ensureObjectImage(object, appData.materialDetails);
+        if (isCancelled || !imageUrl) {
+          continue;
+        }
+
+        setObjectImages((current) => ({ ...current, [object.object_id]: imageUrl }));
+      }
+    }
+
+    void syncImages();
 
     return () => {
       isCancelled = true;
     };
-  }, [appData.materialDetails, appData.objects, isLoading]);
+  }, [appData.isFallback, appData.materialDetails, appData.objects, isLoading]);
 
   const selectedObject = useMemo(
     () => appData.objects.find((object) => object.object_id === selectedObjectId) ?? appData.objects[0],

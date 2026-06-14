@@ -365,7 +365,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undef
 const currentUserId =
   (import.meta.env.VITE_CURRENT_USER_ID as string | undefined) ?? DEMO_USER_ID;
 
-const supabase =
+export const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 const normalizeMaterialKey = (value: string) =>
@@ -386,6 +386,30 @@ export const getFallbackData = (): AppData => ({
   materialDetails: fallbackMaterials,
   isFallback: true,
 });
+
+export function subscribeToScanUpdates(onUpdate: () => void) {
+  if (!supabase) {
+    return () => {};
+  }
+
+  const channel = supabase
+    .channel('matterly-scan-updates')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'object_cards',
+        filter: `user_id=eq.${currentUserId}`,
+      },
+      onUpdate,
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}
 
 export async function loadAppData(): Promise<AppData> {
   if (!supabase) {

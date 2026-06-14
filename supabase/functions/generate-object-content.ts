@@ -1,3 +1,6 @@
+// Paste this ENTIRE file into Supabase Dashboard → Edge Functions → generate-object-content
+// Do NOT import from ./data or any other web app file.
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 
 const corsHeaders = {
@@ -208,10 +211,7 @@ Return JSON only:
   return JSON.parse(data.choices[0].message.content) as GeneratedText;
 }
 
-async function generateImage(
-  body: GenerateRequest,
-  supabase: ReturnType<typeof createClient>,
-): Promise<GeneratedImage> {
+async function generateImage(body: GenerateRequest, supabase: ReturnType<typeof createClient>): Promise<GeneratedImage> {
   const material = body.detected_materials?.[0] ?? body.material_display_name ?? 'mixed materials';
   const image_prompt =
     `3D render of a ${body.display_name}, glossy plastic toy style, made of ${material}. ` +

@@ -145,7 +145,10 @@ function LearnScreen({
           </p>
         )}
 
-        <section className="timeline" aria-busy={isLoading}>
+        <section
+          className={`timeline${dayGroups.length === 1 ? ' timeline--single' : ''}`}
+          aria-busy={isLoading}
+        >
           {dayGroups.map((group) => (
             <article className="day-group" key={group.isoDate}>
               <div className="timeline-dot" />
@@ -249,11 +252,13 @@ function DetailScreen({
       </header>
 
       <section className="detail-hero">
-        <ObjectVisual
-          imageUrl={imageUrl}
-          name={object.display_name}
-          size="large"
-        />
+        <div className="detail-hero-visual">
+          <ObjectVisual
+            imageUrl={imageUrl}
+            name={object.display_name}
+            size="large"
+          />
+        </div>
         <h1>{object.display_name}</h1>
         <div className="material-tabs">
           {object.detected_materials.map((material) => (
@@ -311,9 +316,7 @@ function InfoStack({ detail }: { detail: MaterialDetail }) {
       <div className="info-stack">
         {items.map((item) => (
           <article className={`info-card ${item.tone}`} key={item.label}>
-            <span className="info-card-icon">
-              <img src={item.iconSrc} alt="" />
-            </span>
+            <img className={`info-card-icon ${item.tone}`} src={item.iconSrc} alt="" />
             <div>
               <h3>{item.label}</h3>
               <p>{item.text}</p>
@@ -327,25 +330,29 @@ function InfoStack({ detail }: { detail: MaterialDetail }) {
 
 function ImpactCard({ detail }: { detail: MaterialDetail }) {
   const rows = [
-    ['CO2e emissions', detail.impact.co2_convert_value, detail.impact.co2_bar_percent, 'green'],
-    ['Water consumption', detail.impact.water_convert_value, detail.impact.water_bar_percent, 'blue'],
-    ['Energy used', detail.impact.electricity_convert_value, detail.impact.electricity_bar_percent, 'teal'],
+    ['CO2e emissions', detail.impact.co2_convert_value, detail.impact.co2_bar_percent, 'green', 'g', '#2E5D13'],
+    ['Water consumption', detail.impact.water_convert_value, detail.impact.water_bar_percent, 'blue', 'L', '#6896BA'],
+    ['Energy used', detail.impact.electricity_convert_value, detail.impact.electricity_bar_percent, 'teal', 'MJ', '#0BB695'],
   ] as const;
 
   return (
-    <section className="impact-card">
+    <section className="detail-section">
       <h2>Environmental impact</h2>
-      {rows.map(([label, value, percent, tone]) => (
-        <div className="impact-row" key={label}>
-          <div>
-            <span>{label}</span>
-            <strong>{formatMetric(value)}</strong>
+      <div className="impact-card">
+        {rows.map(([label, value, percent, tone, unit, valueColor]) => (
+          <div className="impact-row" key={label}>
+            <div>
+              <span>{label}</span>
+              <strong className={`impact-value impact-value--${tone}`} style={{ color: valueColor }}>
+                {formatImpactValue(value, unit)}
+              </strong>
+            </div>
+            <div className="bar-track">
+              <span className={tone} style={{ width: `${percent ?? 0}%` }} />
+            </div>
           </div>
-          <div className="bar-track">
-            <span className={tone} style={{ width: `${percent ?? 0}%` }} />
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </section>
   );
 }
@@ -359,7 +366,7 @@ function Lifecycle({ detail }: { detail: MaterialDetail }) {
         .sort((a, b) => a.step_order - b.step_order)
         .map((step) => (
           <article className="lifecycle-step" key={step.id}>
-            <span>{step.step_order}</span>
+            <span aria-hidden="true" />
             <div>
               <h3>{step.step_title}</h3>
               <p>{step.step_text_long}</p>
@@ -379,7 +386,7 @@ function QuizCard({
 
   return (
     <section className="quiz-card">
-      <span>POP QUIZ</span>
+      <span className="quiz-badge">POP QUIZ!</span>
       <h2>{quiz.question}</h2>
       <div className="quiz-actions">
         <button type="button" onClick={() => setAnswer(true)}>
@@ -405,11 +412,11 @@ function QuizCard({
 function ActionCard({ action }: { action: string }) {
   return (
     <section className="action-card">
-      <GeneratedObjectIcon name="Reusable mug" size="small" />
-      <div>
-        <span>UPSTREAM ACTION</span>
-        <h2>{action}</h2>
+      <div className="action-card-icon">
+        <GeneratedObjectIcon name="Reusable mug" size="small" />
       </div>
+      <span>UPSTREAM ACTION</span>
+      <h2>{action}</h2>
     </section>
   );
 }
@@ -505,7 +512,9 @@ function buildDayGroups(objects: ObjectCard[]) {
     groups.push({
       isoDate,
       label: dateFormatter.format(date).replace(/(\d+)$/, (_, day) => ordinal(Number(day))),
-      objects: sortedObjects.filter((object) => localDateKey(new Date(object.created_at)) === isoDate),
+      objects: sortedObjects
+        .filter((object) => localDateKey(new Date(object.created_at)) === isoDate)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     });
   }
 
@@ -533,12 +542,13 @@ function ordinal(day: number) {
   return `${day}${suffix}`;
 }
 
-function formatMetric(value?: number | null) {
+function formatImpactValue(value?: number | null, unit?: string) {
   if (value === null || value === undefined) {
     return 'Data pending';
   }
 
-  return `${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+  const formatted = value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return unit ? `${formatted}${unit}` : formatted;
 }
 
 function makeQuiz(myths: string[], materialName: string) {

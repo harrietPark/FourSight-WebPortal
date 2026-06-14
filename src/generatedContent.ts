@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { findMaterialDetail, type MaterialDetail, type ObjectCard } from './data';
+import { isQuizNatural, makeQuiz } from './quiz';
 
 export type GeneratedContent = {
   image_url?: string | null;
@@ -26,6 +27,29 @@ function isGeneratedContent(value: unknown): value is GeneratedContent {
 
   const record = value as Record<string, unknown>;
   return typeof record.quiz_question === 'string' && typeof record.action_item === 'string';
+}
+
+function withNaturalQuiz(
+  content: GeneratedContent,
+  object: ObjectCard,
+  detail: MaterialDetail,
+): GeneratedContent {
+  if (isQuizNatural(content.quiz_question, object.display_name)) {
+    return content;
+  }
+
+  const localQuiz = makeQuiz(
+    detail.material.myths,
+    object.display_name,
+    detail.material.display_name,
+  );
+
+  return {
+    ...content,
+    quiz_question: localQuiz.question,
+    quiz_answer: localQuiz.answer,
+    quiz_explanation: localQuiz.explanation,
+  };
 }
 
 export async function fetchCachedContent(
@@ -60,8 +84,10 @@ export async function loadGeneratedContent(
 
   const materialId = detail.material.material_id;
   const cached = await fetchCachedContent(object.object_id, materialId);
+  const cachedQuizOk =
+    Boolean(cached?.quiz_question) && isQuizNatural(cached!.quiz_question, object.display_name);
 
-  if (cached?.image_url && cached.quiz_question && cached.action_item) {
+  if (cached?.image_url && cachedQuizOk && cached.action_item) {
     return cached;
   }
 
@@ -74,21 +100,21 @@ export async function loadGeneratedContent(
       material_display_name: detail.material.display_name,
       detected_materials: object.detected_materials,
       myths: detail.material.myths,
-      quiz_prompt: `Write a true/false quiz about ${object.display_name} that tests a common myth about its ${detail.material.display_name} material.`,
+      quiz_prompt: `Write one casual true/false question about recycling or disposing of a ${object.display_name}. Focus on ${detail.material.display_name}. Sound like a friend asking trivia — not a textbook. Never mention unrelated objects like paper cups unless the scanned item is drinkware.`,
     },
   });
 
   if (error) {
     console.warn('Generated content function failed. Keeping local fallback content.', error);
-    return cached;
+    return cached ? withNaturalQuiz(cached, object, detail) : null;
   }
 
   if (!isGeneratedContent(data)) {
     console.warn('Generated content function returned an invalid payload.', data);
-    return cached;
+    return cached ? withNaturalQuiz(cached, object, detail) : null;
   }
 
-  return data;
+  return withNaturalQuiz(data, object, detail);
 }
 
 export async function prefetchObjectImages(
@@ -154,7 +180,21 @@ export function subscribeToGeneratedImages(
     )
     .subscribe();
 
+  const pollId = window.setInterval(async () => {
+    const { data } = await contentSupabase
+      .from('generated_object_content')
+      .select('object_id, image_url')
+      .not('image_url', 'is', null);
+
+    for (const row of data ?? []) {
+      if (row.object_id && row.image_url) {
+        onImageReady(row.object_id, row.image_url);
+      }
+    }
+  }, 15_000);
+
   return () => {
+    window.clearInterval(pollId);
     void contentSupabase.removeChannel(channel);
   };
 }

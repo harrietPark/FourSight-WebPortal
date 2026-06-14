@@ -33,6 +33,7 @@ import {
   prefetchObjectImages,
   subscribeToGeneratedImages,
 } from './generatedContent';
+import { normalizeQuiz } from './quiz';
 
 type Screen = 'splash' | 'main' | 'detail';
 type MainTab = 'learn' | 'log' | 'quests' | 'profile';
@@ -137,17 +138,28 @@ function App() {
 
       setObjectImages((current) => ({ ...current, ...cachedImages }));
 
-      for (const object of appData.objects) {
-        if (isCancelled || cachedImages[object.object_id]) {
-          continue;
-        }
+      const missingObjects = appData.objects.filter((object) => !cachedImages[object.object_id]);
+      const results = await Promise.allSettled(
+        missingObjects.map(async (object) => {
+          const imageUrl = await ensureObjectImage(object, appData.materialDetails);
+          return [object.object_id, imageUrl] as const;
+        }),
+      );
 
-        const imageUrl = await ensureObjectImage(object, appData.materialDetails);
-        if (isCancelled || !imageUrl) {
-          continue;
-        }
+      if (isCancelled) {
+        return;
+      }
 
-        setObjectImages((current) => ({ ...current, [object.object_id]: imageUrl }));
+      const generatedImages = Object.fromEntries(
+        results
+          .filter((result): result is PromiseFulfilledResult<readonly [string, string | null]> => {
+            return result.status === 'fulfilled' && Boolean(result.value[1]);
+          })
+          .map((result) => result.value),
+      );
+
+      if (Object.keys(generatedImages).length > 0) {
+        setObjectImages((current) => ({ ...current, ...generatedImages }));
       }
     }
 
@@ -550,17 +562,18 @@ function DetailScreen({
     generated?.cacheKey === generatedCacheKey ? generated.content : null;
   const imageUrl = activeGenerated?.image_url ?? initialImageUrl;
   const materialName = activeDetail?.material.display_name ?? activeMaterialName;
-  const quiz = activeGenerated
-    ? withObjectQuizContext(
-        {
-          question: activeGenerated.quiz_question,
-          answer: activeGenerated.quiz_answer,
-          explanation: activeGenerated.quiz_explanation,
-        },
-        object.display_name,
-        materialName,
-      )
-    : makeQuiz(activeDetail?.material.myths ?? [], object.display_name, materialName);
+  const quiz = normalizeQuiz(
+    activeGenerated
+      ? {
+          quiz_question: activeGenerated.quiz_question,
+          quiz_answer: activeGenerated.quiz_answer,
+          quiz_explanation: activeGenerated.quiz_explanation,
+        }
+      : null,
+    activeDetail?.material.myths ?? [],
+    object.display_name,
+    materialName,
+  );
   const action =
     activeGenerated?.action_item ??
     makeActionItem(object.display_name, activeDetail?.material.display_name ?? activeMaterialName);
@@ -1030,51 +1043,6 @@ function formatImpactValue(value?: number | null, unit?: string) {
 
   const formatted = value.toLocaleString('en-US', { maximumFractionDigits: 2 });
   return unit ? `${formatted}${unit}` : formatted;
-}
-
-function makeQuiz(myths: string[], objectName: string, materialName: string) {
-  const myth = myths[0];
-
-  if (myth) {
-    const statement = myth.replace(/\.$/, '').trim();
-    return {
-      question: `True or false: For this ${objectName}, ${statement.charAt(0).toLowerCase()}${statement.slice(1)}?`,
-      answer: false,
-      explanation: `This ${objectName} contains ${materialName}. ${myth}`,
-    };
-  }
-
-  return {
-    question: `True or false: The ${materialName} in this ${objectName} can always go in your usual recycling bin?`,
-    answer: false,
-    explanation: `${objectName} often combines ${materialName} with other parts, which changes how it should be sorted.`,
-  };
-}
-
-function withObjectQuizContext(
-  quiz: { question: string; answer: boolean; explanation?: string | null },
-  objectName: string,
-  materialName: string,
-) {
-  const mentionsObject = new RegExp(objectName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(
-    quiz.question,
-  );
-  const mentionsMaterial = new RegExp(materialName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(
-    quiz.question,
-  );
-
-  if (mentionsObject && mentionsMaterial) {
-    return quiz;
-  }
-
-  const normalizedQuestion = quiz.question.trim().replace(/\?*$/, '');
-  return {
-    ...quiz,
-    question: `For this ${objectName} (${materialName}), ${normalizedQuestion.charAt(0).toLowerCase()}${normalizedQuestion.slice(1)}?`,
-    explanation:
-      quiz.explanation ??
-      `Think about how ${materialName} shows up in a ${objectName}, not just on its own.`,
-  };
 }
 
 function makeActionItem(objectName: string, materialName: string) {

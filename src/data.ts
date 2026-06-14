@@ -2,6 +2,28 @@ import { createClient } from '@supabase/supabase-js';
 
 export const DEMO_USER_ID = 'demoUser0614';
 
+export const normalizeMaterialKey = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+const MATERIAL_ALIAS: Record<string, string> = {
+  'abs-plastic': 'plastic',
+  'abs': 'plastic',
+  'polypropylene': 'plastic',
+  'silicone': 'plastic',
+  'polyethylene': 'polyethylene',
+  'paperboard': 'paperboard',
+  'cardboard': 'cardboard',
+  'aluminum': 'plastic',
+  'aluminium': 'plastic',
+  'lcd-glass': 'plastic',
+  'tempered-glass': 'plastic',
+  'soda-lime-glass': 'plastic',
+  'glass': 'plastic',
+};
+
 export type UserData = {
   user_id: string;
   created_at: string;
@@ -368,17 +390,42 @@ const currentUserId =
 export const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
-const normalizeMaterialKey = (value: string) =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+const normalizeMaterialKeyLocal = normalizeMaterialKey;
 
 const uniqueMaterialKeys = (objects: ObjectCard[]) =>
-  Array.from(new Set(objects.flatMap((object) => object.detected_materials.map(normalizeMaterialKey))));
+  Array.from(new Set(objects.flatMap((object) => object.detected_materials.map(normalizeMaterialKeyLocal))));
 
-export const findMaterialDetail = (materialName: string, details: Record<string, MaterialDetail>) =>
-  details[normalizeMaterialKey(materialName)] ?? details[materialName.toLowerCase()];
+export const findMaterialDetail = (materialName: string, details: Record<string, MaterialDetail>) => {
+  const key = normalizeMaterialKey(materialName);
+  const direct = details[key] ?? details[materialName.toLowerCase()];
+
+  if (direct) {
+    return {
+      ...direct,
+      material: {
+        ...direct.material,
+        material_id: key,
+        display_name: materialName,
+      },
+    };
+  }
+
+  const aliasKey = MATERIAL_ALIAS[key];
+  const aliased = aliasKey ? details[aliasKey] : undefined;
+
+  if (!aliased) {
+    return undefined;
+  }
+
+  return {
+    ...aliased,
+    material: {
+      ...aliased.material,
+      material_id: key,
+      display_name: materialName,
+    },
+  };
+};
 
 export const getFallbackData = (): AppData => ({
   user: fallbackUser,
@@ -406,7 +453,20 @@ export function subscribeToScanUpdates(onUpdate: () => void) {
     )
     .subscribe();
 
+  const pollId = window.setInterval(onUpdate, 10_000);
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') {
+      onUpdate();
+    }
+  };
+
+  window.addEventListener('focus', onUpdate);
+  document.addEventListener('visibilitychange', onVisible);
+
   return () => {
+    window.clearInterval(pollId);
+    window.removeEventListener('focus', onUpdate);
+    document.removeEventListener('visibilitychange', onVisible);
     void supabase.removeChannel(channel);
   };
 }

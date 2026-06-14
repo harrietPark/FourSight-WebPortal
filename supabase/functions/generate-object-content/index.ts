@@ -149,9 +149,15 @@ async function generateTextContent(body: GenerateRequest): Promise<GeneratedText
   const myths = body.myths ?? [];
   const materialName = body.material_display_name ?? body.material_id;
   const detectedMaterials = body.detected_materials ?? [];
+  const isDrinkware = /cup|mug|coffee|soda|bottle/i.test(body.display_name);
+  const relevantMyths = myths.filter((myth) => {
+    const lower = myth.toLowerCase();
+    const isDrinkMyth = /paper cup|coffee cup|takeaway cup|mug|soda cup/i.test(lower);
+    return isDrinkware || !isDrinkMyth;
+  });
   const quizGuidance =
     body.quiz_prompt ??
-    `Write a true/false quiz about ${body.display_name} that tests a common myth about its ${materialName} material.`;
+    `Write one casual true/false question about recycling or disposing of a ${body.display_name}. Focus on ${materialName}.`;
 
   const prompt = `
 You are Matterly, a friendly sustainability companion app for Snap Spectacles.
@@ -160,23 +166,26 @@ Object: ${body.display_name}
 ${body.description ? `Object description: ${body.description}` : ''}
 Active material: ${materialName}
 Detected materials: ${detectedMaterials.join(', ') || materialName}
-Known myths about this material:
-${myths.map((myth) => `- ${myth}`).join('\n') || '- No myths provided'}
+Relevant myths:
+${relevantMyths.map((myth) => `- ${myth}`).join('\n') || '- Mixed materials often need special drop-off, not curbside bins.'}
 
 Quiz guidance: ${quizGuidance}
 
 Rules:
-- quiz_question MUST mention both "${body.display_name}" and "${materialName}".
-- Frame the question around how this specific object uses this material.
-- quiz_explanation should connect the object and material, not just the material alone.
-- Keep quiz_question under 120 characters when possible.
+- quiz_question must sound like casual trivia a friend would ask — one sentence, ends with "?".
+- NEVER start with "True or false:" or "For this ${body.display_name},".
+- NEVER mention unrelated objects (e.g. paper cups when the object is a monitor or laptop).
+- The question must be about "${body.display_name}" and "${materialName}" only.
+- quiz_answer is true or false based on real recycling/disposal facts.
+- quiz_explanation: one short sentence connecting the object and material.
+- action_item: one practical upstream action under 110 characters.
 
 Return JSON only:
 {
-  "quiz_question": "A fun yes/no quiz question",
+  "quiz_question": "Can you put an old monitor in curbside recycling?",
   "quiz_answer": false,
-  "quiz_explanation": "One short explanation sentence",
-  "action_item": "One practical upstream action under 110 characters"
+  "quiz_explanation": "Electronics need e-waste drop-off because they mix metals, plastics, and glass.",
+  "action_item": "Find a local e-waste drop-off before replacing old electronics."
 }
 `.trim();
 
@@ -193,7 +202,7 @@ Return JSON only:
         {
           role: 'system',
           content:
-            'You create concise, accurate sustainability education content for a mobile app. Always tie quiz questions to both the scanned object and its active material.',
+            'You create concise, natural-sounding sustainability trivia for a mobile app. Questions must match the scanned object — never reuse drinkware myths for electronics or furniture.',
         },
         { role: 'user', content: prompt },
       ],
@@ -214,8 +223,8 @@ async function generateImage(
 ): Promise<GeneratedImage> {
   const material = body.detected_materials?.[0] ?? body.material_display_name ?? 'mixed materials';
   const image_prompt =
-    `3D render of a ${body.display_name}, glossy plastic toy style, made of ${material}. ` +
-    'Vibrant colors, clean white background, soft shadow underneath, isometric view, cute and minimal, no text.';
+    `Single ${body.display_name}, cute 3D product icon, isometric view, glossy toy render, ` +
+    `${material} material accents, centered on pure white background, soft shadow, vibrant colors, no text, no people, no watermark.`;
 
   const res = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',

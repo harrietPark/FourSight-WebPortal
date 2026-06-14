@@ -5,6 +5,8 @@ import {
   Award,
   CalendarDays,
   Check,
+  CircleCheck,
+  CircleX,
   Flame,
   GraduationCap,
   List,
@@ -738,27 +740,66 @@ function QuizCard({
   quiz: { question: string; answer: boolean; explanation?: string | null };
 }) {
   const [answer, setAnswer] = useState<boolean | null>(null);
+  const hasAnswered = answer !== null;
+  const isCorrect = hasAnswered && answer === quiz.answer;
+
+  function buttonClass(choice: boolean) {
+    const classes = ['quiz-btn', choice ? 'quiz-btn-yes' : 'quiz-btn-no'];
+
+    if (!hasAnswered) {
+      return classes.join(' ');
+    }
+
+    if (choice === quiz.answer) {
+      classes.push('quiz-btn-correct');
+    }
+
+    if (choice === answer && !isCorrect) {
+      classes.push('quiz-btn-wrong');
+    }
+
+    if (choice === answer) {
+      classes.push('quiz-btn-selected');
+    }
+
+    return classes.join(' ');
+  }
 
   return (
     <section className="quiz-card">
       <span className="quiz-badge">POP QUIZ!</span>
       <h2>{quiz.question}</h2>
       <div className="quiz-actions">
-        <button type="button" onClick={() => setAnswer(true)}>
+        <button
+          type="button"
+          className={buttonClass(true)}
+          disabled={hasAnswered}
+          onClick={() => setAnswer(true)}
+        >
           <Check size={18} />
           YES
         </button>
-        <button type="button" onClick={() => setAnswer(false)}>
+        <button
+          type="button"
+          className={buttonClass(false)}
+          disabled={hasAnswered}
+          onClick={() => setAnswer(false)}
+        >
           <X size={18} />
           NO
         </button>
       </div>
-      {answer !== null && (
-        <p>
-          {answer === quiz.answer
-            ? quiz.explanation ?? 'Nice! That matches the material data.'
-            : quiz.explanation ?? 'Not quite. Check the myth behind this material.'}
-        </p>
+      {hasAnswered && (
+        <div className={`quiz-feedback ${isCorrect ? 'quiz-feedback-correct' : 'quiz-feedback-wrong'}`}>
+          <div className="quiz-feedback-header">
+            {isCorrect ? <CircleCheck size={22} strokeWidth={2.2} /> : <CircleX size={22} strokeWidth={2.2} />}
+            <p className="quiz-feedback-label">{isCorrect ? 'Correct!' : 'Not quite!'}</p>
+          </div>
+          {!isCorrect && (
+            <p className="quiz-feedback-answer">The answer is {quiz.answer ? 'Yes' : 'No'}.</p>
+          )}
+          {quiz.explanation && <p className="quiz-feedback-explanation">{quiz.explanation}</p>}
+        </div>
       )}
     </section>
   );
